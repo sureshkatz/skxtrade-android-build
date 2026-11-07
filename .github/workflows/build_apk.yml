@@ -5,6 +5,9 @@ on:
     branches: [ "**" ]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     name: Build Android APK
@@ -48,8 +51,27 @@ jobs:
       - name: Build Release APK
         run: flutter build apk --release || true
 
+      - name: Rename APKs for clarity
+        run: |
+          mkdir -p dist
+          cp build/app/outputs/flutter-apk/app-debug.apk dist/SKXTRADE-1.2.1-debug.apk || true
+          cp build/app/outputs/flutter-apk/app-release.apk dist/SKXTRADE-1.2.1-release.apk || true
+
       - name: Upload APKs as Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: SKXTRADE-APK
-          path: build/app/outputs/flutter-apk/*.apk
+          path: dist/*.apk
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.2.1
+          name: "SKX TRADE 1.2.1 Android APK"
+          body: |
+            Automated Android build of SKXTRADE mobile companion.
+            - `SKXTRADE-1.2.1-release.apk`: Production release APK
+            - `SKXTRADE-1.2.1-debug.apk`: Debug APK
+          files: dist/*.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

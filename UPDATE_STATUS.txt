@@ -1,0 +1,8 @@
+Android 1.2.1 source update with Equity Trend badges, filter and explanations
+Fixes tab-switch RangeError and incorrect Saved/History assignment, rejects stale
+responses, serializes refresh and settings writes, throttles list/account polling,
+runs account checks independently of research/list refresh, and preserves the original app design. Install the Windows/web update separately.
+APK compilation was stopped at the user's request. No APK is included.
+Android static analysis and 30 tests passed. APK compilation and physical device testing remain required. Build using BUILD_ANDROID.cmd
+with Flutter and Android SDK installed. Use your EXISTING signing key to update the
+installed application; this ZIP does not include private signing credentials.

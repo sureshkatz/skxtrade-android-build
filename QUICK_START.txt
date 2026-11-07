@@ -1,0 +1,24 @@
+SKX TRADE 1.2.0
+
+1. Close Windows SKXTRADE. Extract the Windows backend ZIP and run
+   Update\APPLY_WINDOWS_UPDATE.cmd, then restart Desktop.
+   Portable/source users: see Update\README.md for -ProjectRoot.
+2. If no additional password is configured, run
+   Update\SET_ADDITIONAL_PASSWORD.cmd. Custom data folders need -DataRoot.
+3. Install SKXTRADE-1.2.0-arm64.apk over the existing app; do not uninstall.
+   The app ID and signing key are unchanged.
+4. Default server: https://sureshkatz.shop
+   Sign in with the existing SKXTRADE user login. After five wrong main
+   logins, both main and additional password are required by the server.
+   Remember me saves username and encrypted session, never passwords.
+5. Keep Windows, MT5, backend and Cloudflare tunnel running.
+   The tunnel token stays on Windows, never in Android.
+
+Trade uses the original OpenAlgo chart with its indicator/drawing catalog.
+Five equal controls: Symbol, Type, Indicators, Timeframe dropdown, Strategies.
+Sell/Buy open confirmed lot/SL/TP forms and show actual broker result states.
+Check Positions/history before retrying an unknown or pending execution.
+
+Full Android source and full patched Windows source are in their ZIPs.
+External build prerequisites and PineForge are not included. Reuse your
+existing runtime and retain the original private signing archive for builds.

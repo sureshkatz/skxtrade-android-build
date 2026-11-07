@@ -1,0 +1,39 @@
+<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1"><style>html,body,#chart{margin:0;width:100%;height:100%;overflow:hidden;background:transparent}#chart{position:absolute;inset:0}#error{font:13px sans-serif;padding:20px}</style></head><body><div id="chart"></div><div id="error"></div><script>/*CHART_LIBRARY*/</script><script>
+let chart=null,series=[],lastKind='',fitted=false,previousBars=[];
+const el=document.getElementById('chart');
+function finite(n){return Number.isFinite(Number(n));}
+function average(data,n,exp){let prior=data[0]?.close||0;return data.map((b,i)=>{let value;if(exp){prior=b.close*2/(n+1)+prior*(1-2/(n+1));value=prior;}else{const a=data.slice(Math.max(0,i-n+1),i+1);value=a.reduce((s,x)=>s+x.close,0)/a.length;}return{time:b.time,value};});}
+function rsi(data,n=14){let gain=0,loss=0;return data.map((b,i)=>{if(i===0)return{time:b.time,value:50};const d=b.close-data[i-1].close;gain=(gain*(n-1)+Math.max(d,0))/n;loss=(loss*(n-1)+Math.max(-d,0))/n;return{time:b.time,value:loss===0?(gain===0?50:100):100-100/(1+gain/loss)};});}
+window.renderChart=function(cfg){try{
+ const key=cfg.key||cfg.kind;const different=lastKind!==key;
+ const oldRange=chart&&!different?chart.timeScale().getVisibleLogicalRange():null;
+ if(!chart){chart=LightweightCharts.createChart(el,{autoSize:true,layout:{background:{color:cfg.background},textColor:cfg.muted,fontSize:11,attributionLogo:true},grid:{vertLines:{color:cfg.border},horzLines:{color:cfg.border}},rightPriceScale:{borderColor:cfg.border},timeScale:{borderColor:cfg.border,minBarSpacing:.001,rightOffset:0},handleScroll:true,handleScale:true});new ResizeObserver(()=>{if(chart)chart.applyOptions({width:el.clientWidth,height:el.clientHeight});}).observe(el);}
+ chart.applyOptions({layout:{background:{color:cfg.background},textColor:cfg.muted},grid:{vertLines:{color:cfg.border,visible:cfg.grid!==false},horzLines:{color:cfg.border,visible:cfg.grid!==false}}});
+ series.forEach(s=>chart.removeSeries(s));series=[];
+ const add=(type,opts,data)=>{const s=chart.addSeries(type,opts);s.setData(data);series.push(s);return s;};
+ if(cfg.kind==='price'){
+ const bars=(cfg.data||[]).filter(b=>finite(b.time)&&finite(b.close)).map(b=>({time:Number(b.time),open:Number(b.open),high:Number(b.high),low:Number(b.low),close:Number(b.close),volume:Number(b.volume)||0})).sort((a,b)=>a.time-b.time).filter((b,i,a)=>!i||b.time!==a[i-1].time);previousBars=bars;
+ if(cfg.type==='line')add(LightweightCharts.LineSeries,{color:cfg.primary,lineWidth:2,priceFormat:{type:'price',precision:cfg.digits??5,minMove:Math.pow(10,-(cfg.digits??5))}},bars.map(b=>({time:b.time,value:b.close})));
+ else add(LightweightCharts.CandlestickSeries,{upColor:cfg.good,downColor:cfg.bad,wickUpColor:cfg.good,wickDownColor:cfg.bad,borderVisible:false,priceFormat:{type:'price',precision:cfg.digits??5,minMove:Math.pow(10,-(cfg.digits??5))}},bars);
+ const line=(color,data)=>add(LightweightCharts.LineSeries,{color,lineWidth:1,priceLineVisible:false,lastValueVisible:false},data);
+ if(cfg.indicators?.ema){line(cfg.primary,average(bars,cfg.fast||14,true));line('#d39b42',average(bars,cfg.slow||78,true));}
+ if(cfg.indicators?.sma)line('#4f92be',average(bars,50,false));
+ if(cfg.indicators?.bands){const avg=average(bars,20,false);for(const sign of [-1,1])line(cfg.muted,avg.map((p,i)=>{const a=bars.slice(Math.max(0,i-19),i+1);const deviation=Math.sqrt(a.reduce((s,b)=>s+(b.close-p.value)**2,0)/a.length);return{time:p.time,value:p.value+sign*2*deviation};}));}
+ if(cfg.indicators?.volume){add(LightweightCharts.HistogramSeries,{priceScaleId:'volume',priceLineVisible:false,lastValueVisible:false},bars.map(b=>({time:b.time,value:b.volume,color:b.close>=b.open?cfg.good+'66':cfg.bad+'66'})));chart.priceScale('volume').applyOptions({scaleMargins:{top:.82,bottom:0}});}
+ if(cfg.indicators?.rsi){add(LightweightCharts.LineSeries,{priceScaleId:'rsi',color:cfg.primary,lineWidth:1,priceLineVisible:false,lastValueVisible:false},rsi(bars));chart.priceScale('rsi').applyOptions({scaleMargins:{top:.8,bottom:0}});}
+ }else{
+ const points=(cfg.data||[]).filter(p=>finite(p.time)&&finite(p.value)).map(p=>({time:Number(p.time),value:Number(p.value)})).sort((a,b)=>a.time-b.time).filter((p,i,a)=>!i||p.time!==a[i-1].time);
+ const cum=(cfg.cumulative||[]).filter(p=>finite(p.time)&&finite(p.value)).sort((a,b)=>a.time-b.time).filter((p,i,a)=>i===a.length-1||p.time!==a[i+1].time);
+ const padded=[...(cfg.from&&(!points.length||cfg.from<points[0].time)?[{time:cfg.from}]:[]),...points,...(cfg.to&&(!points.length||cfg.to>points[points.length-1].time)?[{time:cfg.to}]:[])];
+ if(cfg.showCumulative!==false)add(LightweightCharts.AreaSeries,{lineColor:cfg.good,topColor:cfg.good+'22',bottomColor:cfg.good+'02',lineWidth:2,title:'Cumulative P&L'},cum.length?cum:padded);
+ if(cfg.showEquity!==false)add(LightweightCharts.LineSeries,{color:cfg.primary,lineWidth:2,title:'Equity P&L'},padded);
+ if(cfg.showHold&&cfg.hold?.length)add(LightweightCharts.LineSeries,{color:cfg.muted,lineWidth:1,title:'Buy and hold'},cfg.hold);
+ if(cfg.showExcursions&&cfg.excursions?.length){add(LightweightCharts.HistogramSeries,{priceScaleId:'excursions',priceLineVisible:false,lastValueVisible:false},cfg.excursions);chart.priceScale('excursions').applyOptions({scaleMargins:{top:.86,bottom:0}});}
+ }
+ if(different||!fitted){chart.timeScale().fitContent();fitted=true;}else if(oldRange)chart.timeScale().setVisibleLogicalRange(oldRange);
+ lastKind=key;document.getElementById('error').textContent='';
+}catch(e){document.getElementById('error').textContent='Chart: '+e.message;}};
+window.fitChart=()=>chart?.timeScale().fitContent();
+window.chartRange=days=>{if(!chart)return;if(!days){chart.timeScale().fitContent();return;}const all=series[0]?.data()||[];if(all.length)chart.timeScale().setVisibleRange({from:all[all.length-1].time-days*86400,to:all[all.length-1].time});};
+window.addEventListener('load',()=>Ready.postMessage('ready'));
+</script></body></html>

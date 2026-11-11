@@ -13,6 +13,11 @@ const timeframes = {
   'D1': 'D1',
 };
 const executionModes = {
+  'broker_close': 'On candle close',
+  'broker_tick': 'On every tick',
+};
+const historicalExecutionModes = {
+  ...executionModes,
   'open_only': 'Chart OHLC — Fast',
   'ohlc_1m': '1-minute OHLC — Detailed',
   'real_ticks': 'Real broker ticks',
@@ -131,7 +136,7 @@ class _ResearchPageState extends State<ResearchPage> {
   int tab = 0, tradePage = 0;
   String? script;
   String tf = 'M30',
-      model = 'open_only',
+      model = 'broker_close',
       method = 'grid',
       period = '6M',
       error = '',
@@ -583,7 +588,7 @@ class _ResearchPageState extends State<ResearchPage> {
               ),
               gap(),
               dropdown(
-                'Execution model',
+                'Strategy timing',
                 model,
                 executionModes,
                 (v) => setState(() => model = v),
@@ -814,14 +819,7 @@ class _ResearchPageState extends State<ResearchPage> {
         Row(
           children: [
             Expanded(
-              child: dropdown(
-                'Model used',
-                executionModes.containsKey('${r['tickModel']}')
-                    ? '${r['tickModel']}'
-                    : model,
-                executionModes,
-                (v) => setState(() => model = v),
-              ),
+              child: Text('Strategy timing used · ${historicalExecutionModes['${r['tickModel']}'] ?? '—'}'),
             ),
             IconButton(
               tooltip: 'Re-run with selected model',
@@ -909,7 +907,7 @@ class _ResearchPageState extends State<ResearchPage> {
     double profit(Map<String, dynamic> t) => numv(t['profit'] ?? t['pnl']);
     final all = trades.map(obj).map(profit).toList();
     final data = {
-      'Model used': executionModes['${r['tickModel']}'] ?? model,
+      'Model used': historicalExecutionModes['${r['tickModel']}'] ?? '—',
       'Initial balance': money(initial),
       'Final balance': money(initial + net),
       'Total return': initial != 0 ? '${money(net / initial * 100)}%' : '—',
@@ -1096,3 +1094,4 @@ String csv(List<dynamic> rows) {
     ...rows.map((r) => keys.map((k) => quote(obj(r)[k] ?? '')).join(',')),
   ].join('\r\n');
 }
+

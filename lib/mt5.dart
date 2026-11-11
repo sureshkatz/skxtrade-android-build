@@ -23,11 +23,22 @@ class _TradingPageState extends State<TradingPage> {
       strategyBusy = false,
       landscape = false;
   final chart = OriginalChartController();
+  AppModel? app;
+  void onQuote() {
+    final quote = app?.marketQuote.value ?? {};
+    if (widget.active && '${quote['symbol']}'.toLowerCase() == symbol.toLowerCase()) {
+      unawaited(chart.quotes(symbol, tf, arr(quote['ticks'])).catchError((Object _) {}));
+    }
+  }
   @override
   void initState() {
     super.initState();
     poll = Timer.periodic(const Duration(seconds: 5), (_) {
-      if (widget.active) load();
+      if (widget.active && app?.marketStatus.value != 'MT5 feed connected') load();
+      if (widget.active && strategy.isNotEmpty && !strategyBusy &&
+          (lastPineRun == null || DateTime.now().difference(lastPineRun!).inSeconds >= 15)) {
+        unawaited(updateStrategy(strategy, strategySource, strategyValues));
+      }
     });
   }
 
@@ -37,6 +48,8 @@ class _TradingPageState extends State<TradingPage> {
     if (!initialized) {
       initialized = true;
       final m = TradeScope.of(context);
+      app = m;
+      m.marketQuote.addListener(onQuote);
       symbol = m.selectedSymbol;
       tf = m.selectedTf;
       if (widget.active) Future.microtask(load);
@@ -56,6 +69,7 @@ class _TradingPageState extends State<TradingPage> {
   @override
   void dispose() {
     poll?.cancel();
+    app?.marketQuote.removeListener(onQuote);
     if (landscape)
       SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
     super.dispose();
@@ -367,13 +381,9 @@ class _TradingPageState extends State<TradingPage> {
     final m = TradeScope.of(c);
     final names = m.symbols.map(symbolName).where((s) => s.isNotEmpty).toSet();
     if (symbol.isEmpty && names.isNotEmpty) symbol = names.first;
-    final tick = obj(m.snapshot['tick']);
-    final same = m.snapshot['symbol'] == symbol;
     final digits = numv(
       obj(m.snapshot['symbol_info'])['digits'],
-    ).toInt().clamp(0, 8);
-    String quote(String k) =>
-        same && numv(tick[k]) > 0 ? money(tick[k], decimals: digits) : '—';
+    ).toInt().clamp(0, 8).toInt();
     return Padding(
       padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
       child: Column(
@@ -483,12 +493,15 @@ class _TradingPageState extends State<TradingPage> {
             child: Row(
               children: [
                 Expanded(
-                  child: Text(
-                    strategy.isEmpty ? 'MT5 · $tf' : strategy,
+                  child: ValueListenableBuilder<String>(
+                    valueListenable: m.marketStatus,
+                    builder: (context, status, _) => Text(
+                    strategy.isEmpty ? '$status · $tf' : '$strategy · $status',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(fontSize: 10, color: m.style.muted),
                   ),
+                ),
                 ),
                 IconButton(
                   tooltip: 'Chart settings',
@@ -547,13 +560,16 @@ class _TradingPageState extends State<TradingPage> {
                               ),
                             ),
                             const SizedBox(width: 10),
-                            Text(
-                              quote(side == 'SELL' ? 'bid' : 'ask'),
+                            ValueListenableBuilder<Map<String, dynamic>>(
+                              valueListenable: m.marketQuote,
+                              builder: (context, tick, _) => Text(
+                              liveQuote(m, symbol, side == 'SELL' ? 'bid' : 'ask', digits),
                               style: const TextStyle(
                                 color: Colors.white,
                                 fontWeight: FontWeight.w700,
                                 fontSize: 14,
                               ),
+                            ),
                             ),
                           ],
                         ),
@@ -580,6 +596,7 @@ class _PositionsPageState extends State<PositionsPage> {
   String search = '';
   int page = 0;
   late bool pending;
+  bool closed = false;
   @override
   void initState() {
     super.initState();
@@ -709,18 +726,22 @@ class _PositionsPageState extends State<PositionsPage> {
             ),
           ),
           gap(),
-          SegmentedButton<bool>(
+          SegmentedButton<int>(
             segments: const [
-              ButtonSegment(value: false, label: Text('Open positions')),
-              ButtonSegment(value: true, label: Text('Pending orders')),
+              ButtonSegment(value: 0, label: Text('Open')),
+              ButtonSegment(value: 1, label: Text('Pending')),
+              ButtonSegment(value: 2, label: Text('Closed')),
             ],
-            selected: {pending},
+            selected: {closed ? 2 : pending ? 1 : 0},
             onSelectionChanged: (v) => setState(() {
-              pending = v.first;
+              closed = v.first == 2;
+              pending = v.first == 1;
               page = 0;
             }),
           ),
           gap(),
+          if (closed) const Expanded(child: ClosedPositions()),
+          if (!closed) ...[
           TextField(
             decoration: const InputDecoration(
               hintText: 'Search symbol, ticket, or strategy ID',
@@ -892,6 +913,7 @@ class _PositionsPageState extends State<PositionsPage> {
               ),
             ],
           ),
+          ],
         ],
       ),
     );
@@ -979,7 +1001,13 @@ class _Mt5PageState extends State<Mt5Page> {
                   ? connections(c)
                   : tab == 2
                   ? protection(c)
-                  : const TestEntryForm(),
+                  : ListView(
+                      children: [
+                        const TestEntryForm(embedded: true),
+                        gap(),
+                        mt5Diagnostics(c),
+                      ],
+                    ),
             ),
           ],
         ),
@@ -1497,8 +1525,8 @@ class _DeployStrategyPageState extends State<DeployStrategyPage> {
           }, (v) => setState(() => tf = v)),
           gap(),
           dropdown('Calculate', calc, {
-            'tick': 'Every tick',
-            'close': 'Bar close (OHLC)',
+            'tick': 'On every tick',
+            'close': 'On candle close',
           }, (v) => setState(() => calc = v)),
           gap(),
           box(
@@ -1565,7 +1593,8 @@ Widget dropdown(
 
 class TestEntryForm extends StatefulWidget {
   final String? initialSymbol, initialSide;
-  const TestEntryForm({super.key, this.initialSymbol, this.initialSide});
+  final bool embedded;
+  const TestEntryForm({super.key, this.initialSymbol, this.initialSide, this.embedded = false});
   @override
   State<TestEntryForm> createState() => _TestEntryFormState();
 }
@@ -1633,6 +1662,8 @@ class _TestEntryFormState extends State<TestEntryForm> {
     if (symbol.text.isEmpty)
       symbol.text = widget.initialSymbol ?? TradeScope.of(c).selectedSymbol;
     return ListView(
+      shrinkWrap: widget.embedded,
+      physics: widget.embedded ? const NeverScrollableScrollPhysics() : null,
       children: [
         box(
           Column(
@@ -1702,3 +1733,4 @@ class _TestEntryFormState extends State<TestEntryForm> {
     );
   }
 }
+

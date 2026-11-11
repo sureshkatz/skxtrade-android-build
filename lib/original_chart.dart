@@ -8,6 +8,8 @@ import 'api.dart';
 
 class OriginalChartController {
   WebViewController? view;
+  Future<void> quotes(String symbol, String tf, List<dynamic> ticks) async =>
+      view?.runJavaScript('marketQuotes(${jsonEncode(symbol)},${jsonEncode(tf)},${jsonEncode(ticks)})');
   Future<void> action(String name) async =>
       view?.runJavaScript('chartAction(${jsonEncode(name)})');
   Future<void> strategy(Map<String, dynamic> data, String key) async => view
@@ -164,3 +166,4 @@ class _OriginalChartState extends State<OriginalChart> {
   @override
   Widget build(BuildContext c) => WebViewWidget(controller: view);
 }
+

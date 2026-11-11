@@ -15,6 +15,21 @@ feed:{getBars:async req=>{const data=await rpc('bars',{symbol:req.symbol||config
 widget.on?.('symbol',e=>!nativeUpdating&&ChartBridge.postMessage(JSON.stringify({type:'market',symbol:e.symbol,tf:tfs[widget.interval()]||config.tf})));widget.on?.('interval',e=>!nativeUpdating&&ChartBridge.postMessage(JSON.stringify({type:'market',symbol:widget.symbol(),tf:tfs[e.interval]||config.tf})));
 }catch(e){error(e);}}
 window.chartConfig=cfg=>{if(!widget){if(!window.starting){window.starting=true;start(cfg);}return;}const changed=cfg.symbol!==config.symbol||cfg.tf!==config.tf;nativeUpdating=true;if(changed)strategyResult({},'');config=cfg;if(widget.symbol()!==cfg.symbol)widget.setSymbol(cfg.symbol,'MT5');if(widget.interval()!==interval(cfg.tf))widget.setInterval(interval(cfg.tf));widget.setChartType(cfg.chartType==='candles'?'candlestick':cfg.chartType);widget.setTheme(cfg.dark?'dark':'light');if(!changed&&cfg.data?.length){const current=widget.chart.primaryBars(),last=current[current.length-1]?.time;for(const b of bars(cfg.data).slice(-3))if(last===undefined||b.time>=last)try{widget.series.update(b);}catch(e){error(e);}}nativeUpdating=false;};
+window.marketQuotes=(symbol,tf,ticks)=>{
+  if(!widget||symbol!==config.symbol||tf!==config.tf)return;
+  const seconds={M1:60,M3:180,M5:300,M10:600,M15:900,M30:1800,M45:2700,H1:3600,H4:14400,D1:86400}[tf];
+  if(!seconds)return;
+  const current=widget.chart.primaryBars();
+  let bar=current[current.length-1];
+  if(!bar)return;
+  for(const tick of ticks){
+    const price=Number(tick.price),time=Math.floor(Number(tick.time)/seconds)*seconds;
+    if(!(price>0)||!Number.isFinite(time)||time<bar.time)continue;
+    bar=time===bar.time?{...bar,high:Math.max(bar.high,price),low:Math.min(bar.low,price),close:price}:
+      {time,open:price,high:price,low:price,close:price,volume:0};
+    widget.series.update(bar);
+  }
+};
 window.chartAction=name=>{if(!widget)return;if(name==='indicators')widget.openIndicatorPicker();if(name==='settings')widget.openSettings();if(name==='objects')widget.openObjects();if(name==='reload')widget.reload();};
 window.strategyResult=(result,key)=>{if(!widget)return;for(const s of overlays)widget.chart.removeSeries(s);overlays=[];for(const p of result.plots||[]){const data=(p.data||[]).map(x=>x.value==null?{time:Number(x.time)}:{time:Number(x.time),value:Number(x.value)});if(!data.some(x=>Number.isFinite(x.value)))continue;const s=widget.chart.addSeries('line',{title:p.title||'Pine',color:p.color||'#536bf4',lineWidth:2,priceLineVisible:false,...(p.pane==='pane'?{paneIndex:1}:{})});s.setData(data);overlays.push(s);}
 const sec=v=>{if(v==null||v==='')return NaN;const n=Number(v);if(Number.isFinite(n))return n>1e11?Math.floor(n/1000):n;const text=String(v).trim();return Date.parse(/(?:Z|[+-]\d\d:\d\d)$/.test(text)?text:text.replace(' ','T')+'Z')/1000;};
@@ -22,3 +37,4 @@ const marks=(result.markers||[]).map(m=>({time:sec(m.time),position:m.position==
 for(const t of [...(result.report?.trades||[]),...(result.report?.openTrades||[])]){const short=/short|sell/i.test(String(t.side??t.type??''))||Number(t.dir??t.direction)<0,et=sec(t.entry_time??t.entryTime),xt=sec(t.exit_time??t.exitTime);if(Number.isFinite(et))marks.push({time:et,position:short?'aboveBar':'belowBar',shape:short?'arrowDown':'arrowUp',text:short?'SELL':'BUY',color:short?'#d6425b':'#009a7b',size:'small'});if(Number.isFinite(xt))marks.push({time:xt,position:short?'belowBar':'aboveBar',shape:'circle',text:'Exit',color:'#8b5bd5',size:'small'});}
 if(markerSeries!==widget.series){markerLayer=widget.series.createMarkers(()=>widget.chart.primaryBars());markerSeries=widget.series;}markerLayer.setMarkers(marks.filter(m=>Number.isFinite(m.time)).sort((a,b)=>a.time-b.time));};window.addEventListener('pagehide',flush);ChartBridge.postMessage(JSON.stringify({type:'ready'}));
 </script></body></html>
+

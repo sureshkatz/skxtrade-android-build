@@ -24,6 +24,7 @@ part 'mt5.dart';
 part 'home.dart';
 part 'mobile_controls.dart';
 part 'trade_details.dart';
+part 'closed_positions.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -63,6 +64,63 @@ class AppModel extends ChangeNotifier with WidgetsBindingObserver {
       resumed = true;
   Timer? timer;
   DateTime? updated;
+  final ValueNotifier<Map<String, dynamic>> marketQuote = ValueNotifier({});
+  WebSocket? _marketSocket;
+  Timer? _marketRetry;
+  int _marketGeneration = 0;
+  final ValueNotifier<String> marketStatus = ValueNotifier('Connecting');
+
+  void connectMarket() {
+    final generation = ++_marketGeneration;
+    _marketRetry?.cancel();
+    unawaited(_marketSocket?.close());
+    _marketSocket = null;
+    marketQuote.value = {};
+    marketStatus.value = 'Connecting';
+    if (hasSession && resumed && selectedSymbol.isNotEmpty) {
+      unawaited(_listenMarket(generation, selectedSymbol, selectedTf));
+    }
+  }
+
+  Future<void> _listenMarket(int generation, String symbol, String timeframe) async {
+    try {
+      final socket = await api.marketSocket(symbol, timeframe);
+      if (generation != _marketGeneration) {
+        await socket.close();
+        return;
+      }
+      _marketSocket = socket;
+      socket.pingInterval = const Duration(seconds: 15);
+      await for (final raw in socket) {
+        if (generation != _marketGeneration) break;
+        if (raw is! String) continue;
+        final update = obj(jsonDecode(raw));
+        if (update['error'] != null) {
+          marketStatus.value = 'Price feed delayed';
+          continue;
+        }
+        marketStatus.value = 'MT5 feed connected';
+        final ticks = arr(update['ticks']);
+        if (ticks.isNotEmpty) {
+          marketQuote.value = {...obj(ticks.last), 'ticks': ticks,
+            'chartSignals': update['signals'], 'resync': update['resync']};
+        }
+      }
+    } catch (_) {
+      // Keep the last quote visible during a reconnect.
+    } finally {
+      if (generation == _marketGeneration && hasSession && resumed) {
+        unawaited(_marketSocket?.close());
+        _marketSocket = null;
+        marketStatus.value = 'Price feed reconnecting';
+        _marketRetry = Timer(const Duration(seconds: 1), () {
+          if (generation == _marketGeneration) {
+            unawaited(_listenMarket(generation, symbol, timeframe));
+          }
+        });
+      }
+    }
+  }
   Future<void> initialize() async {
     WidgetsBinding.instance.addObserver(this);
     prefs = await SharedPreferences.getInstance();
@@ -80,6 +138,7 @@ class AppModel extends ChangeNotifier with WidgetsBindingObserver {
     }
     if (hasSession) {
       unawaited(refresh());
+      connectMarket();
       timer = Timer.periodic(const Duration(seconds: 5), (_) {
         if (resumed) refresh();
       });
@@ -90,11 +149,13 @@ class AppModel extends ChangeNotifier with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) {
     resumed = state == AppLifecycleState.resumed;
     if (resumed && hasSession) refresh();
+    connectMarket();
   }
 
   Future<void> loggedIn() async {
     hasSession = true;
     error = '';
+    connectMarket();
     timer?.cancel();
     timer = Timer.periodic(const Duration(seconds: 5), (_) {
       if (resumed) refresh();
@@ -134,6 +195,7 @@ class AppModel extends ChangeNotifier with WidgetsBindingObserver {
         symbols = x is List ? x : arr(obj(x)['symbols']);
         if (selectedSymbol.isEmpty && symbols.isNotEmpty) {
           selectedSymbol = symbolName(symbols.first);
+          connectMarket();
         }
       }
       if (scripts.isEmpty)
@@ -147,6 +209,7 @@ class AppModel extends ChangeNotifier with WidgetsBindingObserver {
       if (e is ApiError && e.status == 401) {
         hasSession = false;
         timer?.cancel();
+        connectMarket();
       }
     } finally {
       loading = false;
@@ -168,6 +231,7 @@ class AppModel extends ChangeNotifier with WidgetsBindingObserver {
   Future<void> selectMarket(String symbol, String tf) async {
     selectedSymbol = symbol;
     selectedTf = tf;
+    connectMarket();
     await prefs.setString('symbol', symbol);
     await prefs.setString('timeframe', tf);
     notifyListeners();
@@ -177,6 +241,7 @@ class AppModel extends ChangeNotifier with WidgetsBindingObserver {
     await api.logout();
     hasSession = false;
     timer?.cancel();
+    connectMarket();
     snapshot = {};
     scripts = {};
     strategies = [];
@@ -912,3 +977,4 @@ class ThemesPage extends StatelessWidget {
     );
   }
 }
+

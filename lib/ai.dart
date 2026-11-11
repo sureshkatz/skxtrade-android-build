@@ -425,8 +425,8 @@ class _AiPageState extends State<AiPage> {
                         pair(
                           setting('minutes', 'Limit (min)', numeric: true),
                           dropdown(
-                            'Model',
-                            '${setup['tickModel'] ?? 'open_only'}',
+                            'Strategy timing',
+                            setup['tickModel'] == 'broker_tick' ? 'broker_tick' : 'broker_close',
                             executionModes,
                             (v) => setState(() => changed('tickModel', v)),
                           ),
@@ -1643,3 +1643,4 @@ Widget equityTrendInfo(BuildContext c, dynamic value, {bool compact = false}) {
     ),
   );
 }
+

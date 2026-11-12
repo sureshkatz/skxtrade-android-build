@@ -1,8 +1,12 @@
-Android 1.2.1 source update with Equity Trend badges, filter and explanations
-Fixes tab-switch RangeError and incorrect Saved/History assignment, rejects stale
-responses, serializes refresh and settings writes, throttles list/account polling,
-runs account checks independently of research/list refresh, and preserves the original app design. Install the Windows/web update separately.
-APK compilation was stopped at the user's request. No APK is included.
-Android static analysis and 30 tests passed. APK compilation and physical device testing remain required. Build using BUILD_ANDROID.cmd
-with Flutter and Android SDK installed. Use your EXISTING signing key to update the
-installed application; this ZIP does not include private signing credentials.
+SKXTRADE Android 1.2.4
+
+Use the Windows 3.1.10 backend for the updated acceptance rules, account
+stream, position history and MT5 diagnostics.
+
+AI Trading adds a minimum win-rate acceptance rule and combined Saved
+Strategies filters. Create Strategy supports Pine / Auto Lot and Fixed Lot.
+Account equity, open-position prices and floating P&L follow broker updates.
+
+Build using Flutter and Android SDK. The source archive excludes signing
+credentials. Android requires the same signing key to install over a prior
+APK with the same application ID.

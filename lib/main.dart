@@ -65,6 +65,7 @@ class AppModel extends ChangeNotifier with WidgetsBindingObserver {
   Timer? timer;
   DateTime? updated;
   final ValueNotifier<Map<String, dynamic>> marketQuote = ValueNotifier({});
+  final ValueNotifier<Map<String, dynamic>> accountQuotes = ValueNotifier({});
   WebSocket? _marketSocket;
   Timer? _marketRetry;
   int _marketGeneration = 0;
@@ -76,13 +77,18 @@ class AppModel extends ChangeNotifier with WidgetsBindingObserver {
     unawaited(_marketSocket?.close());
     _marketSocket = null;
     marketQuote.value = {};
+    accountQuotes.value = {};
     marketStatus.value = 'Connecting';
-    if (hasSession && resumed && selectedSymbol.isNotEmpty) {
+    if (hasSession && resumed) {
       unawaited(_listenMarket(generation, selectedSymbol, selectedTf));
     }
   }
 
-  Future<void> _listenMarket(int generation, String symbol, String timeframe) async {
+  Future<void> _listenMarket(
+    int generation,
+    String symbol,
+    String timeframe,
+  ) async {
     try {
       final socket = await api.marketSocket(symbol, timeframe);
       if (generation != _marketGeneration) {
@@ -97,13 +103,21 @@ class AppModel extends ChangeNotifier with WidgetsBindingObserver {
         final update = obj(jsonDecode(raw));
         if (update['error'] != null) {
           marketStatus.value = 'Price feed delayed';
+          accountQuotes.value = {};
           continue;
         }
         marketStatus.value = 'MT5 feed connected';
+        if (update['accountQuotes'] is Map) {
+          accountQuotes.value = obj(update['accountQuotes']);
+        }
         final ticks = arr(update['ticks']);
         if (ticks.isNotEmpty) {
-          marketQuote.value = {...obj(ticks.last), 'ticks': ticks,
-            'chartSignals': update['signals'], 'resync': update['resync']};
+          marketQuote.value = {
+            ...obj(ticks.last),
+            'ticks': ticks,
+            'chartSignals': update['signals'],
+            'resync': update['resync'],
+          };
         }
       }
     } catch (_) {
@@ -113,6 +127,7 @@ class AppModel extends ChangeNotifier with WidgetsBindingObserver {
         unawaited(_marketSocket?.close());
         _marketSocket = null;
         marketStatus.value = 'Price feed reconnecting';
+        accountQuotes.value = {};
         _marketRetry = Timer(const Duration(seconds: 1), () {
           if (generation == _marketGeneration) {
             unawaited(_listenMarket(generation, symbol, timeframe));
@@ -121,6 +136,22 @@ class AppModel extends ChangeNotifier with WidgetsBindingObserver {
       }
     }
   }
+
+  Map<String, dynamic> get liveAccount {
+    final quote = accountQuotes.value;
+    return quote['login'] == obj(snapshot['account'])['login']
+        ? obj(quote['account'])
+        : {};
+  }
+
+  dynamic positionQuote(Map<String, dynamic> position, String field) {
+    final update = accountQuotes.value;
+    if (update['login'] != obj(snapshot['account'])['login'])
+      return position[field];
+    return obj(obj(update['positions'])['${position['ticket']}'])[field] ??
+        position[field];
+  }
+
   Future<void> initialize() async {
     WidgetsBinding.instance.addObserver(this);
     prefs = await SharedPreferences.getInstance();
@@ -977,4 +1008,3 @@ class ThemesPage extends StatelessWidget {
     );
   }
 }
-

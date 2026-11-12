@@ -210,22 +210,29 @@ class HomePage extends StatelessWidget {
                       ),
                     ),
                     Divider(height: short ? 12 : 20),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: datum(
-                            'Current equity',
-                            has ? money(equity) : '—',
-                          ),
-                        ),
-                        Expanded(
-                          child: datum(
-                            'Unrealized P&L',
-                            has ? signed(floating) : '—',
-                            color: floating >= 0 ? t.good : t.bad,
-                          ),
-                        ),
-                      ],
+                    ValueListenableBuilder<Map<String, dynamic>>(
+                      valueListenable: m.accountQuotes,
+                      builder: (context, _, child) {
+                        final live = m.liveAccount;
+                        final profit = numv(live['profit'] ?? floating);
+                        return Row(
+                          children: [
+                            Expanded(
+                              child: datum(
+                                'Current equity',
+                                has ? money(live['equity'] ?? equity) : '—',
+                              ),
+                            ),
+                            Expanded(
+                              child: datum(
+                                'Unrealized P&L',
+                                has ? signed(profit) : '—',
+                                color: profit >= 0 ? t.good : t.bad,
+                              ),
+                            ),
+                          ],
+                        );
+                      },
                     ),
                   ],
                 ),

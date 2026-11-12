@@ -1,47 +1,11 @@
-SKX TRADE 1.2.0 — RELEASE VALIDATION
-1 November 2026
+SKXTRADE Android 1.2.4 validation
 
-App ID: com.skxtrade.skxtrade_mobile
-ARM64 version code: 2003. Minimum SDK 26; target/compile SDK 36.
-APK: SKXTRADE-1.2.0-arm64.apk
-Bytes: 20448157
-SHA-256: c0125eca91196783e1ee453177d0c4b4471b09dc0d7fa7f054f12976176290de
-Same original signing certificate SHA-256:
-eaee7531215373f0ee47902784bdd2793d014bafe2c1ec0b6fee4f4b5233d8ca
+Flutter 3.50.0 analyzed the source without errors. The framework reported
+deprecation notices for the existing Material imports.
+All 31 Flutter unit and widget tests passed.
+The new deployment test verifies that Fixed Lot reveals the lot-size field
+and that the selected lot size appears in the demo account confirmation.
 
-CHECKS
-Flutter analysis: no issues. 28 Android tests passed, including Home at five
-phone sizes, ten themes, five equal chart controls at 320/390 widths, native
-timeframe dropdown, session persistence, server challenge propagation, broker
-return-code states/actual fill dialog/duplicate blocking, trade details,
-selected-connection deletion, portrait restoration after leaving Trade,
-Pine inputs, combinations and full-period equity data.
-
-13 backend unit tests passed. Full ASGI checks passed for protected API routes,
-exact fifth-failure challenge, correct paired login, secure HttpOnly cookie,
-backend version 1.2 and logout. No MT5 broker order was sent during testing.
-
-The original unmodified OpenAlgo 2.6 vendor bundles were exercised in a real
-mobile-sized Chromium runtime: 112 indicators, 87 drawing tools, indicator
-picker, Pine plot/entry-exit markers, chart types, drawing objects and drawing
-creation/edit/save/restore/deletion all passed without runtime errors.
-Chart data in this renderer test was an explicit synthetic fixture.
-
-Windows updater validation passed: incoming Python syntax, complete backend
-structure, repeat application without duplicate routes, credential-data
-preservation, and inclusion of all 88 backend Python modules, specifically
-backend/app/data/mt5.py. Existing data/runtime/tunnel settings are not replaced.
-
-APK signature and ZIP/page alignment are checked before publishing. All native
-ELF load segments meet 16 KB alignment. Original chart assets are present.
-The signing password and private key are excluded from APK and Android source.
-
-LIMITS
-No physical Android device, Windows MT5 terminal, or user's Cloudflare endpoint
-was available for end-to-end verification. Automated mocks/fixtures do not
-establish real broker execution or on-phone performance. Test the installed
-update with your demo account before live trading.
-
-Windows remains the execution host. This package contains an installed-backend
-updater and complete Windows source, not a newly compiled Windows EXE or bundled
-external PineForge/build runtimes. Reuse the existing installed runtime.
+The Windows 3.1.10 backend provides the updated MT5 and AI features.
+Live MT5 order placement and a physical phone installation require
+device and broker verification.

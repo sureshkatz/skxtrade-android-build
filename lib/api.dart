@@ -70,12 +70,18 @@ class TradeApi {
 
   Future<WebSocket> marketSocket(String symbol, String timeframe) {
     final origin = uri('/ws/market');
-    final address = origin.replace(scheme: 'wss', queryParameters: {
-      'symbol': symbol, 'timeframe': timeframe,
-    });
-    return WebSocket.connect(address.toString(), headers: {
-      if (_cookie.isNotEmpty) 'Cookie': _cookie,
-    }).timeout(const Duration(seconds: 10));
+    final address = origin.replace(
+      scheme: 'wss',
+      queryParameters: {
+        'symbol': symbol,
+        'timeframe': timeframe,
+        'account': '1',
+      },
+    );
+    return WebSocket.connect(
+      address.toString(),
+      headers: {if (_cookie.isNotEmpty) 'Cookie': _cookie},
+    ).timeout(const Duration(seconds: 10));
   }
 
   Future<dynamic> request(
@@ -210,4 +216,3 @@ String money(dynamic x, {int decimals = 2}) {
 }
 
 String pretty(dynamic x) => const JsonEncoder.withIndent('  ').convert(x);
-

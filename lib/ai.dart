@@ -20,6 +20,228 @@ class _AiPageState extends State<AiPage> {
   List<dynamic> saved = [], runs = [];
   Set<String> checked = {};
   String error = '', search = '', equityFilter = 'all';
+  String savedMarket = 'all', savedTimeframe = 'all', savedBatch = 'all';
+  String savedSort = 'date';
+  DateTimeRange? savedDates;
+  final savedSearch = TextEditingController();
+  Map<String, double> savedLimits = {};
+  static const savedFields = {
+    'winRate': 'Min win rate (%)',
+    'return': 'Min return (%)',
+    'net': 'Min net profit',
+    'pf': 'Min profit factor',
+    'drawdown': 'Max drawdown (%)',
+    'trades': 'Min trades',
+  };
+
+  double? savedMetric(Map<String, dynamic> row, String key) {
+    final m = obj(row['metrics']);
+    if (key == 'date') return num.tryParse('${row['created']}')?.toDouble();
+    if (key == 'pf' && m['pfInfinite'] == true) return double.infinity;
+    if (key == 'return') {
+      final balance = num.tryParse('${obj(row['config'])['balance']}');
+      final net = num.tryParse('${m['net']}');
+      return balance == null || balance <= 0 || net == null
+          ? null
+          : 100 * net / balance;
+    }
+    return num.tryParse('${m[key]}')?.toDouble();
+  }
+
+  bool savedMatches(Map<String, dynamic> row) {
+    final cfg = obj(row['config']);
+    if (savedMarket != 'all' && cfg['symbol'] != savedMarket) return false;
+    if (savedTimeframe != 'all' && cfg['timeframe'] != savedTimeframe)
+      return false;
+    if (savedBatch != 'all' && row['runId'] != savedBatch) return false;
+    if (savedDates != null) {
+      final stamp = savedMetric(row, 'date');
+      if (stamp == null || !stamp.isFinite) return false;
+      final day = DateTime.fromMillisecondsSinceEpoch((stamp * 1000).round());
+      final end = savedDates!.end;
+      if (day.isBefore(savedDates!.start) ||
+          !day.isBefore(DateTime(end.year, end.month, end.day + 1)))
+        return false;
+    }
+    return savedLimits.entries.every((entry) {
+      final actual = savedMetric(row, entry.key);
+      return actual != null &&
+          (entry.key == 'drawdown'
+              ? actual <= entry.value
+              : actual >= entry.value);
+    });
+  }
+
+  Future<void> savedFilterSheet(BuildContext context) async {
+    final limits = savedLimits.map((key, value) => MapEntry(key, '$value'));
+    var market = savedMarket, timeframe = savedTimeframe, batch = savedBatch;
+    var trend = equityFilter, sort = savedSort;
+    var dates = savedDates;
+    var message = '';
+    Map<String, String> choices(String label, Iterable<dynamic> raw) => {
+      'all': label,
+      for (final x in raw.where((x) => x != null && '$x'.isNotEmpty).toSet())
+        '$x': '$x',
+    };
+    final markets = choices(
+      'All markets',
+      saved.map((x) => obj(obj(x)['config'])['symbol']),
+    );
+    final frames = choices(
+      'All timeframes',
+      saved.map((x) => obj(obj(x)['config'])['timeframe']),
+    );
+    final batches = choices('All batches', saved.map((x) => obj(x)['runId']));
+    market = markets.containsKey(market) ? market : 'all';
+    timeframe = frames.containsKey(timeframe) ? timeframe : 'all';
+    batch = batches.containsKey(batch) ? batch : 'all';
+    String day(DateTime d) => d.toIso8601String().substring(0, 10);
+    final result = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (sheet) => StatefulBuilder(
+        builder: (sheet, update) => Padding(
+          padding: EdgeInsets.fromLTRB(
+            16,
+            12,
+            16,
+            MediaQuery.viewInsetsOf(sheet).bottom + 12,
+          ),
+          child: SizedBox(
+            height: MediaQuery.sizeOf(sheet).height * .65,
+            child: ListView(
+              children: [
+                heading('Saved strategy filters'),
+                dropdown(
+                  'Market',
+                  market,
+                  markets,
+                  (v) => update(() => market = v),
+                ),
+                dropdown(
+                  'Timeframe',
+                  timeframe,
+                  frames,
+                  (v) => update(() => timeframe = v),
+                ),
+                dropdown(
+                  'Batch',
+                  batch,
+                  batches,
+                  (v) => update(() => batch = v),
+                ),
+                dropdown(
+                  'Equity trend',
+                  trend,
+                  equityTrendLabels,
+                  (v) => update(() => trend = v),
+                ),
+                dropdown('Sort by', sort, {
+                  'date': 'Newest saved',
+                  'winRate': 'Highest win rate',
+                  'return': 'Highest return',
+                  'net': 'Highest net profit',
+                  'pf': 'Highest profit factor',
+                  'drawdown': 'Lowest drawdown',
+                  'trades': 'Most trades',
+                }, (v) => update(() => sort = v)),
+                for (final item in savedFields.entries)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: TextFormField(
+                      initialValue: limits[item.key] ?? '',
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                        signed: true,
+                      ),
+                      decoration: InputDecoration(labelText: item.value),
+                      onChanged: (v) => limits[item.key] = v,
+                    ),
+                  ),
+                OutlinedButton(
+                  onPressed: () async {
+                    final range = await showDateRangePicker(
+                      context: sheet,
+                      firstDate: DateTime(2000),
+                      lastDate: DateTime.now(),
+                      initialDateRange: dates,
+                    );
+                    if (range != null && sheet.mounted)
+                      update(() => dates = range);
+                  },
+                  child: Text(
+                    dates == null
+                        ? 'Saved date range'
+                        : '${day(dates!.start)} to ${day(dates!.end)}',
+                  ),
+                ),
+                if (dates != null)
+                  TextButton(
+                    onPressed: () => update(() => dates = null),
+                    child: const Text('Clear date range'),
+                  ),
+                if (message.isNotEmpty) Text(message),
+                FilledButton(
+                  onPressed: () {
+                    final values = <String, double>{};
+                    for (final entry in limits.entries) {
+                      if (entry.value.trim().isEmpty) continue;
+                      final n = double.tryParse(entry.value);
+                      final k = entry.key;
+                      if (n == null ||
+                          !n.isFinite ||
+                          ((k == 'winRate') && (n < 0 || n > 100)) ||
+                          ((k == 'pf' || k == 'drawdown') && n < 0) ||
+                          (k == 'trades' &&
+                              (n < 0 || n != n.roundToDouble()))) {
+                        update(
+                          () => message =
+                              'Enter a valid value for ${savedFields[k]}.',
+                        );
+                        return;
+                      }
+                      values[k] = n;
+                    }
+                    savedLimits = values;
+                    Navigator.pop(sheet, true);
+                  },
+                  child: const Text('Apply filters'),
+                ),
+                TextButton(
+                  onPressed: () => Navigator.pop(sheet, false),
+                  child: const Text('Reset all filters'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    if (!mounted || result == null) return;
+    setState(() {
+      page = 0;
+      if (result) {
+        savedMarket = market;
+        savedTimeframe = timeframe;
+        savedBatch = batch;
+        equityFilter = trend;
+        savedSort = sort;
+        savedDates = dates;
+      } else {
+        savedMarket = 'all';
+        savedTimeframe = 'all';
+        savedBatch = 'all';
+        equityFilter = 'all';
+        savedSort = 'date';
+        savedDates = null;
+        savedLimits = {};
+        search = '';
+        savedSearch.clear();
+      }
+    });
+  }
+
   bool loading = false, busy = false;
   Timer? poll, saveTimer;
   TradeApi? pageApi;
@@ -66,6 +288,7 @@ class _AiPageState extends State<AiPage> {
           .catchError((Object _) {});
     }
     saveTimer?.cancel();
+    savedSearch.dispose();
     super.dispose();
   }
 
@@ -426,7 +649,9 @@ class _AiPageState extends State<AiPage> {
                           setting('minutes', 'Limit (min)', numeric: true),
                           dropdown(
                             'Strategy timing',
-                            setup['tickModel'] == 'broker_tick' ? 'broker_tick' : 'broker_close',
+                            setup['tickModel'] == 'broker_tick'
+                                ? 'broker_tick'
+                                : 'broker_close',
                             executionModes,
                             (v) => setState(() => changed('tickModel', v)),
                           ),
@@ -456,6 +681,7 @@ class _AiPageState extends State<AiPage> {
                         rule('pf', 'Min profit factor'),
                         rule('drawdown', 'Max drawdown', unit: '%'),
                         rule('trades', 'Minimum trades'),
+                        rule('winRate', 'Minimum win rate', unit: '%'),
                         rule('netProfit', 'Min net profit', unit: '%'),
                         gap(),
                         dropdown(
@@ -753,28 +979,29 @@ class _AiPageState extends State<AiPage> {
               equityFilter == 'all' ||
               (obj(s['equityTrend'])['status'] ?? 'pending') == equityFilter,
         )
+        .where(savedMatches)
         .toList();
+    rows.sort((a, b) {
+      final first = savedMetric(a, savedSort),
+          second = savedMetric(b, savedSort);
+      if (first == null) return second == null ? 0 : 1;
+      if (second == null) return -1;
+      return savedSort == 'drawdown'
+          ? first.compareTo(second)
+          : second.compareTo(first);
+    });
     final pages = math.max(1, (rows.length / 4).ceil());
     page = page.clamp(0, pages - 1);
     return Column(
       children: [
         TextField(
+          controller: savedSearch,
           decoration: InputDecoration(
             hintText: 'Search saved strategies',
-            labelText: equityFilter == 'all'
-                ? null
-                : equityTrendLabels[equityFilter],
-            suffixIcon: PopupMenuButton<String>(
-              tooltip: 'Filter equity trend',
-              icon: const Icon(Icons.filter_alt_outlined, size: 20),
-              initialValue: equityFilter,
-              onSelected: (value) => setState(() {
-                equityFilter = value;
-                page = 0;
-              }),
-              itemBuilder: (_) => equityTrendLabels.entries
-                  .map((e) => PopupMenuItem(value: e.key, child: Text(e.value)))
-                  .toList(),
+            suffixIcon: IconButton(
+              tooltip: 'Filter and sort saved strategies',
+              icon: const Icon(Icons.filter_alt_outlined),
+              onPressed: () => savedFilterSheet(c),
             ),
             prefixIcon: Icon(Icons.search, size: 18),
           ),
@@ -783,6 +1010,7 @@ class _AiPageState extends State<AiPage> {
             page = 0;
           }),
         ),
+        Text('${rows.length} matches'),
         gap(8),
         Row(
           children: [
@@ -816,8 +1044,8 @@ class _AiPageState extends State<AiPage> {
         Expanded(
           child: rows.isEmpty
               ? empty(
-                  'No saved strategies',
-                  'Accepted strategies appear here after an AI research run.',
+                  'No matching strategies',
+                  'Change the filters or run AI research to save strategies.',
                 )
               : ListView(
                   children: rows
@@ -849,7 +1077,7 @@ class _AiPageState extends State<AiPage> {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(
-                                    '${obj(s['config'])['symbol']} · ${obj(s['config'])['timeframe']}\nNet ${money(obj(s['metrics'])['net'])} · PF ${money(obj(s['metrics'])['pf'])}',
+                                    '${obj(s['config'])['symbol']} · ${obj(s['config'])['timeframe']}\nWin ${money(savedMetric(s, 'winRate'))}% · Return ${money(savedMetric(s, 'return'))}%\nNet ${money(obj(s['metrics'])['net'])} · PF ${money(obj(s['metrics'])['pf'])}',
                                     style: const TextStyle(fontSize: 10),
                                   ),
                                   equityTrendInfo(
@@ -1643,4 +1871,3 @@ Widget equityTrendInfo(BuildContext c, dynamic value, {bool compact = false}) {
     ),
   );
 }
-

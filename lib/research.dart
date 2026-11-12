@@ -238,7 +238,9 @@ class _ResearchPageState extends State<ResearchPage> {
           error = '';
         });
     } catch (e) {
-      if (mounted && error != '$e') setState(() => error = '$e');
+      if (mounted && requestedId == jobId && error != '$e') {
+        setState(() => error = '$e');
+      }
     } finally {
       refreshing = false;
     }
@@ -318,17 +320,19 @@ class _ResearchPageState extends State<ResearchPage> {
           },
         }),
       );
-      jobId = '${x['id']}';
-      await m.prefs.setString(
-        widget.optimize ? 'optimizationJob' : 'backtestJob',
-        jobId,
-      );
-      if (mounted)
+      final newId = '${x['id']}';
+      if (mounted) {
         setState(() {
+          jobId = newId;
           job = x;
           selected = {};
-          tab = 2;
+          tab = x['status'] == 'failed' ? 0 : 2;
         });
+      }
+      await m.prefs.setString(
+        widget.optimize ? 'optimizationJob' : 'backtestJob',
+        newId,
+      );
     } catch (e) {
       if (mounted) setState(() => error = '$e');
     } finally {
@@ -434,9 +438,48 @@ class _ResearchPageState extends State<ResearchPage> {
     );
   }
 
+  String jobPeriod(Map<String, dynamic> current) {
+    final first = chartTime(current['from']);
+    final last = chartTime(current['to']);
+    if (first == null || last == null) return '';
+    final start = DateTime.fromMillisecondsSinceEpoch(first * 1000, isUtc: true);
+    final end = DateTime.fromMillisecondsSinceEpoch(last * 1000, isUtc: true);
+    return '${date(start)} to ${date(end)} UTC';
+  }
+
+  Future<void> showJobError(BuildContext c) async {
+    final details = [
+      '${job['symbol'] ?? ''} ${job['timeframe'] ?? ''}'.trim(),
+      jobPeriod(job),
+      '${job['message'] ?? ''}',
+    ].where((part) => part.isNotEmpty).join('\n\n');
+    await showDialog<void>(
+      context: c,
+      builder: (dialog) => AlertDialog(
+        title: const Text('Research job failed'),
+        content: SingleChildScrollView(child: SelectableText(details)),
+        actions: [
+          TextButton(
+            onPressed: () async {
+              await Clipboard.setData(ClipboardData(text: details));
+              if (dialog.mounted) Navigator.pop(dialog);
+            },
+            child: const Text('Copy details'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialog),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget runStatus(BuildContext c) {
     final m = TradeScope.of(c), p = obj(job['progress']);
     final total = numv(p['total']), done = numv(p['done'] ?? p['processed']);
+    final failed = job['status'] == 'failed';
+    final dates = jobPeriod(job);
     return Container(
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
@@ -456,6 +499,11 @@ class _ResearchPageState extends State<ResearchPage> {
                 ),
               ),
               const Spacer(),
+              if (failed)
+                TextButton(
+                  onPressed: () => showJobError(c),
+                  child: const Text('Error details'),
+                ),
               if (active)
                 TextButton(
                   style: TextButton.styleFrom(
@@ -480,6 +528,8 @@ class _ResearchPageState extends State<ResearchPage> {
                 ),
             ],
           ),
+          if (failed && dates.isNotEmpty)
+            Text(dates, style: TextStyle(fontSize: 10, color: m.style.muted)),
           Text(
             '${job['message'] ?? ''}${total > 0 ? ' · ${done.round()}/${total.round()}' : ''}',
             maxLines: 2,
@@ -540,6 +590,7 @@ class _ResearchPageState extends State<ResearchPage> {
                   'Period',
                   period,
                   {
+                    '1W': '1 Week',
                     '1M': '1 Month',
                     '3M': '3 Months',
                     '6M': '6 Months',
@@ -553,6 +604,7 @@ class _ResearchPageState extends State<ResearchPage> {
                   (v) => setState(() {
                     period = v;
                     final days = {
+                      '1W': 7,
                       '1M': 30,
                       '3M': 90,
                       '6M': 183,
@@ -564,7 +616,12 @@ class _ResearchPageState extends State<ResearchPage> {
                     }[v];
                     if (days != null) {
                       to = DateTime.now();
-                      from = to.subtract(Duration(days: days));
+                      if (v == '1W') {
+                        // The end date is inclusive in the backend request.
+                        from = DateTime(to.year, to.month, to.day - 6);
+                      } else {
+                        from = to.subtract(Duration(days: days));
+                      }
                     }
                   }),
                 ),
@@ -770,6 +827,9 @@ class _ResearchPageState extends State<ResearchPage> {
 
   Widget chartResult(BuildContext c) {
     final r = report, m = TradeScope.of(c);
+    if (r.isEmpty && job['status'] == 'failed') {
+      return empty('Backtest failed', 'Tap Error details above for the full message.');
+    }
     if (r.isEmpty)
       return empty(
         'No result selected',
@@ -1039,7 +1099,7 @@ class _ResearchPageState extends State<ResearchPage> {
                                       jobId = '${x['id']}';
                                       job = {};
                                       selected = {};
-                                      tab = 2;
+                                      tab = x['status'] == 'failed' ? 0 : 2;
                                     });
                                     TradeScope.of(c).prefs.setString(
                                       widget.optimize
@@ -1094,4 +1154,3 @@ String csv(List<dynamic> rows) {
     ...rows.map((r) => keys.map((k) => quote(obj(r)[k] ?? '')).join(',')),
   ].join('\r\n');
 }
-

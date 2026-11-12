@@ -26,17 +26,25 @@ class _TradingPageState extends State<TradingPage> {
   AppModel? app;
   void onQuote() {
     final quote = app?.marketQuote.value ?? {};
-    if (widget.active && '${quote['symbol']}'.toLowerCase() == symbol.toLowerCase()) {
-      unawaited(chart.quotes(symbol, tf, arr(quote['ticks'])).catchError((Object _) {}));
+    if (widget.active &&
+        '${quote['symbol']}'.toLowerCase() == symbol.toLowerCase()) {
+      unawaited(
+        chart.quotes(symbol, tf, arr(quote['ticks'])).catchError((Object _) {}),
+      );
     }
   }
+
   @override
   void initState() {
     super.initState();
     poll = Timer.periodic(const Duration(seconds: 5), (_) {
-      if (widget.active && app?.marketStatus.value != 'MT5 feed connected') load();
-      if (widget.active && strategy.isNotEmpty && !strategyBusy &&
-          (lastPineRun == null || DateTime.now().difference(lastPineRun!).inSeconds >= 15)) {
+      if (widget.active && app?.marketStatus.value != 'MT5 feed connected')
+        load();
+      if (widget.active &&
+          strategy.isNotEmpty &&
+          !strategyBusy &&
+          (lastPineRun == null ||
+              DateTime.now().difference(lastPineRun!).inSeconds >= 15)) {
         unawaited(updateStrategy(strategy, strategySource, strategyValues));
       }
     });
@@ -496,12 +504,14 @@ class _TradingPageState extends State<TradingPage> {
                   child: ValueListenableBuilder<String>(
                     valueListenable: m.marketStatus,
                     builder: (context, status, _) => Text(
-                    strategy.isEmpty ? '$status · $tf' : '$strategy · $status',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontSize: 10, color: m.style.muted),
+                      strategy.isEmpty
+                          ? '$status · $tf'
+                          : '$strategy · $status',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(fontSize: 10, color: m.style.muted),
+                    ),
                   ),
-                ),
                 ),
                 IconButton(
                   tooltip: 'Chart settings',
@@ -563,13 +573,18 @@ class _TradingPageState extends State<TradingPage> {
                             ValueListenableBuilder<Map<String, dynamic>>(
                               valueListenable: m.marketQuote,
                               builder: (context, tick, _) => Text(
-                              liveQuote(m, symbol, side == 'SELL' ? 'bid' : 'ask', digits),
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w700,
-                                fontSize: 14,
+                                liveQuote(
+                                  m,
+                                  symbol,
+                                  side == 'SELL' ? 'bid' : 'ask',
+                                  digits,
+                                ),
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 14,
+                                ),
                               ),
-                            ),
                             ),
                           ],
                         ),
@@ -709,13 +724,20 @@ class _PositionsPageState extends State<PositionsPage> {
             Row(
               children: [
                 Expanded(
-                  child: metric(
-                    c,
-                    'Floating P&L',
-                    money(
-                      all.fold<double>(0, (sum, p) => sum + numv(p['profit'])),
-                    ),
-                    color: t.good,
+                  child: ValueListenableBuilder<Map<String, dynamic>>(
+                    valueListenable: m.accountQuotes,
+                    builder: (context, _, child) {
+                      final pnl = all.fold<double>(
+                        0,
+                        (sum, p) => sum + numv(m.positionQuote(p, 'profit')),
+                      );
+                      return metric(
+                        c,
+                        'Floating P&L',
+                        money(pnl),
+                        color: pnl >= 0 ? t.good : t.bad,
+                      );
+                    },
                   ),
                 ),
                 Text(
@@ -732,7 +754,13 @@ class _PositionsPageState extends State<PositionsPage> {
               ButtonSegment(value: 1, label: Text('Pending')),
               ButtonSegment(value: 2, label: Text('Closed')),
             ],
-            selected: {closed ? 2 : pending ? 1 : 0},
+            selected: {
+              closed
+                  ? 2
+                  : pending
+                  ? 1
+                  : 0,
+            },
             onSelectionChanged: (v) => setState(() {
               closed = v.first == 2;
               pending = v.first == 1;
@@ -742,182 +770,209 @@ class _PositionsPageState extends State<PositionsPage> {
           gap(),
           if (closed) const Expanded(child: ClosedPositions()),
           if (!closed) ...[
-          TextField(
-            decoration: const InputDecoration(
-              hintText: 'Search symbol, ticket, or strategy ID',
-              prefixIcon: Icon(Icons.search, size: 18),
+            TextField(
+              decoration: const InputDecoration(
+                hintText: 'Search symbol, ticket, or strategy ID',
+                prefixIcon: Icon(Icons.search, size: 18),
+              ),
+              onChanged: (v) => setState(() {
+                search = v;
+                page = 0;
+              }),
             ),
-            onChanged: (v) => setState(() {
-              search = v;
-              page = 0;
-            }),
-          ),
-          gap(),
-          Expanded(
-            child: filtered.isEmpty
-                ? empty(
-                    pending ? 'No pending orders' : 'No open positions',
-                    m.error.isEmpty
-                        ? 'Positions will appear here when opened in MT5.'
-                        : m.error,
-                  )
-                : ListView(
-                    children: filtered.skip(page * 2).take(2).map((p) {
-                      final link = m.strategies
-                          .map(obj)
-                          .where(
-                            (s) => arr(
-                              s['tickets'],
-                            ).any((x) => obj(x)['ticket'] == p['ticket']),
-                          )
-                          .toList();
-                      final side = numv(p['type']) == 0 ? 'BUY' : 'SELL';
-                      return Padding(
-                        padding: const EdgeInsets.only(bottom: 10),
-                        child: box(
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  Text(
-                                    '$side · ${p['symbol']}',
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.w600,
+            gap(),
+            Expanded(
+              child: filtered.isEmpty
+                  ? empty(
+                      pending ? 'No pending orders' : 'No open positions',
+                      m.error.isEmpty
+                          ? 'Positions will appear here when opened in MT5.'
+                          : m.error,
+                    )
+                  : ListView(
+                      children: filtered.skip(page * 2).take(2).map((p) {
+                        final link = m.strategies
+                            .map(obj)
+                            .where(
+                              (s) => arr(
+                                s['tickets'],
+                              ).any((x) => obj(x)['ticket'] == p['ticket']),
+                            )
+                            .toList();
+                        final side = numv(p['type']) == 0 ? 'BUY' : 'SELL';
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 10),
+                          child: box(
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Text(
+                                      '$side · ${p['symbol']}',
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                    const Spacer(),
+                                    ValueListenableBuilder<
+                                      Map<String, dynamic>
+                                    >(
+                                      valueListenable: m.accountQuotes,
+                                      builder: (context, _, child) {
+                                        final pnl = m.positionQuote(
+                                          p,
+                                          'profit',
+                                        );
+                                        return Text(
+                                          money(pnl),
+                                          style: TextStyle(
+                                            color: numv(pnl) >= 0
+                                                ? t.good
+                                                : t.bad,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        );
+                                      },
+                                    ),
+                                  ],
+                                ),
+                                gap(5),
+                                Text(
+                                  '${link.isNotEmpty ? link.first['name'] : 'MT5 position'} · ${p['magic']}',
+                                  style: TextStyle(
+                                    color: t.muted,
+                                    fontSize: 10,
+                                  ),
+                                ),
+                                gap(13),
+                                pair(
+                                  metric(
+                                    c,
+                                    'Volume',
+                                    '${p['volume']} lots',
+                                    small: true,
+                                  ),
+                                  metric(
+                                    c,
+                                    'Ticket',
+                                    '${p['ticket']}',
+                                    small: true,
+                                  ),
+                                ),
+                                gap(12),
+                                pair(
+                                  metric(
+                                    c,
+                                    'Entry',
+                                    '${p['price_open']}',
+                                    small: true,
+                                  ),
+                                  ValueListenableBuilder<Map<String, dynamic>>(
+                                    valueListenable: m.accountQuotes,
+                                    builder: (context, _, child) => metric(
+                                      c,
+                                      'Current',
+                                      '${m.positionQuote(p, 'price_current')}',
+                                      small: true,
                                     ),
                                   ),
-                                  const Spacer(),
-                                  Text(
-                                    money(p['profit']),
-                                    style: TextStyle(
-                                      color: numv(p['profit']) >= 0
-                                          ? t.good
-                                          : t.bad,
-                                      fontWeight: FontWeight.w600,
+                                ),
+                                gap(12),
+                                pair(
+                                  metric(
+                                    c,
+                                    'Stop loss',
+                                    '${p['sl']}',
+                                    small: true,
+                                  ),
+                                  metric(
+                                    c,
+                                    'Take profit',
+                                    '${p['tp']}',
+                                    small: true,
+                                  ),
+                                ),
+                                if (!pending) ...[
+                                  gap(),
+                                  pair(
+                                    OutlinedButton(
+                                      onPressed: () => modify(p),
+                                      child: const Text(
+                                        'Modify SL / TP',
+                                        style: TextStyle(fontSize: 11),
+                                      ),
+                                    ),
+                                    OutlinedButton(
+                                      style: OutlinedButton.styleFrom(
+                                        foregroundColor: t.bad,
+                                      ),
+                                      onPressed: () async {
+                                        if (await confirm(
+                                          c,
+                                          'Close position',
+                                          'Close only ticket ${p['ticket']} (${p['symbol']}, ${p['volume']} lots)? This sends a real MT5 close request.',
+                                          action: 'Close position',
+                                        )) {
+                                          if (c.mounted)
+                                            await brokerAction(
+                                              c,
+                                              'close:${p['ticket']}',
+                                              () => m.api.post(
+                                                '/api/mt5/positions/${p['ticket']}/close',
+                                              ),
+                                              closing: true,
+                                            );
+                                        }
+                                      },
+                                      child: const Text(
+                                        'Close position',
+                                        style: TextStyle(fontSize: 11),
+                                      ),
                                     ),
                                   ),
                                 ],
-                              ),
-                              gap(5),
-                              Text(
-                                '${link.isNotEmpty ? link.first['name'] : 'MT5 position'} · ${p['magic']}',
-                                style: TextStyle(color: t.muted, fontSize: 10),
-                              ),
-                              gap(13),
-                              pair(
-                                metric(
-                                  c,
-                                  'Volume',
-                                  '${p['volume']} lots',
-                                  small: true,
-                                ),
-                                metric(
-                                  c,
-                                  'Ticket',
-                                  '${p['ticket']}',
-                                  small: true,
-                                ),
-                              ),
-                              gap(12),
-                              pair(
-                                metric(
-                                  c,
-                                  'Entry',
-                                  '${p['price_open']}',
-                                  small: true,
-                                ),
-                                metric(
-                                  c,
-                                  'Current',
-                                  '${p['price_current']}',
-                                  small: true,
-                                ),
-                              ),
-                              gap(12),
-                              pair(
-                                metric(
-                                  c,
-                                  'Stop loss',
-                                  '${p['sl']}',
-                                  small: true,
-                                ),
-                                metric(
-                                  c,
-                                  'Take profit',
-                                  '${p['tp']}',
-                                  small: true,
-                                ),
-                              ),
-                              if (!pending) ...[
-                                gap(),
-                                pair(
-                                  OutlinedButton(
-                                    onPressed: () => modify(p),
-                                    child: const Text(
-                                      'Modify SL / TP',
-                                      style: TextStyle(fontSize: 11),
-                                    ),
-                                  ),
-                                  OutlinedButton(
-                                    style: OutlinedButton.styleFrom(
-                                      foregroundColor: t.bad,
-                                    ),
-                                    onPressed: () async {
-                                      if (await confirm(
-                                        c,
-                                        'Close position',
-                                        'Close only ticket ${p['ticket']} (${p['symbol']}, ${p['volume']} lots)? This sends a real MT5 close request.',
-                                        action: 'Close position',
-                                      )) {
-                                        if (c.mounted)
-                                          await brokerAction(
-                                            c,
-                                            'close:${p['ticket']}',
-                                            () => m.api.post(
-                                              '/api/mt5/positions/${p['ticket']}/close',
-                                            ),
-                                            closing: true,
-                                          );
-                                      }
-                                    },
-                                    child: const Text(
-                                      'Close position',
-                                      style: TextStyle(fontSize: 11),
-                                    ),
-                                  ),
-                                ),
                               ],
-                            ],
+                            ),
                           ),
-                        ),
-                      );
-                    }).toList(),
-                  ),
-          ),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              TextButton(
-                onPressed: page > 0 ? () => setState(() => page--) : null,
-                child: const Text('Previous'),
-              ),
-              Text(
-                '${page + 1} / $pages',
-                style: TextStyle(fontSize: 11, color: t.muted),
-              ),
-              TextButton(
-                onPressed: page + 1 < pages
-                    ? () => setState(() => page++)
-                    : null,
-                child: const Text('Next'),
-              ),
-            ],
-          ),
+                        );
+                      }).toList(),
+                    ),
+            ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                TextButton(
+                  onPressed: page > 0 ? () => setState(() => page--) : null,
+                  child: const Text('Previous'),
+                ),
+                Text(
+                  '${page + 1} / $pages',
+                  style: TextStyle(fontSize: 11, color: t.muted),
+                ),
+                TextButton(
+                  onPressed: page + 1 < pages
+                      ? () => setState(() => page++)
+                      : null,
+                  child: const Text('Next'),
+                ),
+              ],
+            ),
           ],
         ],
       ),
     );
   }
+}
+
+String mt5AccountLabel(Map<String, dynamic> account) {
+  final type = switch (account['trade_mode']) {
+    0 => 'Demo',
+    1 => 'Contest',
+    2 => 'Live',
+    _ => 'Unknown type',
+  };
+  return '$type MT5 account ${account['login'] ?? '—'}';
 }
 
 class Mt5Page extends StatefulWidget {
@@ -946,10 +1001,15 @@ class _Mt5PageState extends State<Mt5Page> {
         : action == 'pause'
         ? 'No new strategy-generated orders while paused. Existing MT5 positions and broker-side SL/TP remain active.'
         : 'New Pine signals may send real MT5 orders.';
+    final settings = action == 'start' || action == 'resume'
+        ? "${mt5AccountLabel(obj(m.snapshot['account']))}\n"
+              "${s['calcMode'] == 'tick' ? 'On every tick' : 'On candle close'} · "
+              "${s['lotMode'] == 'fixed' ? "${s['lotSize']} lots" : 'Pine / Auto Lot'}\n"
+        : '';
     if (await confirm(
       context,
       '${action[0].toUpperCase()}${action.substring(1)} ${s['name']}',
-      '${s['symbol']} · ${s['timeframe']}\nConnection ${s['id']}\n\n$text',
+      '${s['symbol']} · ${s['timeframe']}\n${settings}Connection ${s['id']}\n\n$text',
     )) {
       if (mounted)
         await perform(
@@ -1137,10 +1197,19 @@ class _Mt5PageState extends State<Mt5Page> {
                                   ),
                                 ),
                                 Text(
-                                  status,
+                                  obj(s['diagnostics'])['needsAttention'] ==
+                                          true
+                                      ? 'Needs attention'
+                                      : status,
                                   style: TextStyle(
                                     fontSize: 10,
-                                    color: status == 'Running'
+                                    color:
+                                        obj(
+                                              s['diagnostics'],
+                                            )['needsAttention'] ==
+                                            true
+                                        ? t.bad
+                                        : status == 'Running'
                                         ? t.good
                                         : t.muted,
                                   ),
@@ -1483,18 +1552,21 @@ class DeployStrategyPage extends StatefulWidget {
 
 class _DeployStrategyPageState extends State<DeployStrategyPage> {
   String? strategy;
-  String tf = 'M30', calc = 'tick';
+  String tf = 'M30', calc = 'close', lotMode = 'pine';
   bool busy = false;
   final symbol = TextEditingController();
+  final lot = TextEditingController(text: '0.01');
   @override
   void dispose() {
     symbol.dispose();
+    lot.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext c) {
     final m = TradeScope.of(c);
+    final accountLabel = mt5AccountLabel(obj(m.snapshot['account']));
     strategy ??= m.scripts.keys.firstOrNull;
     if (symbol.text.isEmpty) symbol.text = m.selectedSymbol;
     return Scaffold(
@@ -1529,21 +1601,33 @@ class _DeployStrategyPageState extends State<DeployStrategyPage> {
             'close': 'On candle close',
           }, (v) => setState(() => calc = v)),
           gap(),
-          box(
-            const Text(
-              'Pine / Auto Lot: this backend uses each Pine entry quantity. Set position sizing in your Pine strategy before deploying. The app does not silently override quantities.',
-              style: TextStyle(fontSize: 12),
+          dropdown('Lot Mode', lotMode, {
+            'pine': 'Pine / Auto Lot',
+            'fixed': 'Fixed Lot',
+          }, (v) => setState(() => lotMode = v)),
+          if (lotMode == 'fixed') ...[
+            gap(),
+            field(
+              lot,
+              'Lot size',
+              keyboard: const TextInputType.numberWithOptions(decimal: true),
             ),
-          ),
+          ],
           gap(),
           FilledButton(
             onPressed: busy || strategy == null
                 ? null
                 : () async {
+                    final amount = double.tryParse(lot.text);
+                    if (lotMode == 'fixed' &&
+                        (amount == null || !amount.isFinite || amount <= 0)) {
+                      notice(c, 'Enter a positive fixed lot size.');
+                      return;
+                    }
                     if (!await confirm(
                       c,
                       'Create & deploy',
-                      'Deploy $strategy on ${symbol.text} ($tf)? This strategy may place real MT5 orders.',
+                      '$accountLabel\n$strategy · ${symbol.text} · $tf\n${calc == 'tick' ? 'On every tick' : 'On candle close'} · ${lotMode == 'fixed' ? '$amount lots' : 'Pine / Auto Lot'}\nSL and TP follow Pine.',
                     ))
                       return;
                     setState(() => busy = true);
@@ -1556,7 +1640,8 @@ class _DeployStrategyPageState extends State<DeployStrategyPage> {
                           'symbol': symbol.text.trim(),
                           'timeframe': tf,
                           'calcMode': calc,
-                          'lotMode': 'pine',
+                          'lotMode': lotMode,
+                          if (lotMode == 'fixed') 'lotSize': amount,
                           'start': true,
                         }),
                       );
@@ -1594,7 +1679,12 @@ Widget dropdown(
 class TestEntryForm extends StatefulWidget {
   final String? initialSymbol, initialSide;
   final bool embedded;
-  const TestEntryForm({super.key, this.initialSymbol, this.initialSide, this.embedded = false});
+  const TestEntryForm({
+    super.key,
+    this.initialSymbol,
+    this.initialSide,
+    this.embedded = false,
+  });
   @override
   State<TestEntryForm> createState() => _TestEntryFormState();
 }
@@ -1733,4 +1823,3 @@ class _TestEntryFormState extends State<TestEntryForm> {
     );
   }
 }
-

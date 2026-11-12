@@ -20,6 +20,37 @@ void main() {
     FlutterSecureStorage.setMockInitialValues({});
     SharedPreferences.setMockInitialValues({});
   });
+  testWidgets('Deploy strategy shows lot size only in Fixed Lot mode', (
+    tester,
+  ) async {
+    final model = AppModel();
+    model.scripts = {
+      'EMA': {'source': 'strategy("EMA")'},
+    };
+    model.selectedSymbol = 'XAUUSDm';
+    model.snapshot = {
+      'account': {'login': 1234, 'trade_mode': 0},
+    };
+    await tester.pumpWidget(
+      TradeScope(
+        model: model,
+        child: const MaterialApp(home: DeployStrategyPage()),
+      ),
+    );
+    expect(find.text('Lot size'), findsNothing);
+    await tester.tap(find.text('Pine / Auto Lot'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Fixed Lot').last);
+    await tester.pumpAndSettle();
+    expect(find.text('Lot size'), findsOneWidget);
+    await tester.enterText(find.widgetWithText(TextField, 'Lot size'), '0.02');
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.ensureVisible(find.text('Create & Deploy'));
+    await tester.tap(find.text('Create & Deploy'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Demo MT5 account 1234'), findsOneWidget);
+    expect(find.textContaining('0.02 lots'), findsOneWidget);
+  });
   testWidgets('Equity trend badge opens its explanation', (tester) async {
     await tester.pumpWidget(
       MaterialApp(

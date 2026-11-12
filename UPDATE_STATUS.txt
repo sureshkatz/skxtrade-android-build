@@ -1,6 +1,6 @@
-SKXTRADE Android 1.2.4
+SKXTRADE Android 1.2.5
 
-Use the Windows 3.1.10 backend for the updated acceptance rules, account
+Use the Windows 3.1.11 backend for the updated acceptance rules, account
 stream, position history and MT5 diagnostics.
 
 AI Trading adds a minimum win-rate acceptance rule and combined Saved
@@ -10,3 +10,5 @@ Account equity, open-position prices and floating P&L follow broker updates.
 Build using Flutter and Android SDK. The source archive excludes signing
 credentials. Android requires the same signing key to install over a prior
 APK with the same application ID.
+
+On candle close uses MT5 chart candles. On every tick requires recorded MT5 ticks.

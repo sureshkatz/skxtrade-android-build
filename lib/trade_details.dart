@@ -264,6 +264,11 @@ class _TradeHistoryListState extends State<TradeHistoryList> {
 String brokerOutcome(Map<String, dynamic> r, {bool closing = false}) {
   final code = numv(r['retcode']).toInt();
   if (r['ok'] == false) return 'Failed';
+  if (r['orderType'] == 'limit' &&
+      (code == 10008 || code == 10009) &&
+      numv(r['deal']) == 0) {
+    return 'Limit order placed';
+  }
   if (code == 10009) return closing ? 'Position closed' : 'Order executed';
   if (code == 10010) return closing ? 'Partially closed' : 'Partially filled';
   if (code == 10008) return 'Pending broker execution';

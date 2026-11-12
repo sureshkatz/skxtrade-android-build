@@ -642,7 +642,7 @@ class _AiPageState extends State<AiPage> {
                         gap(),
                         pair(
                           setting('balance', 'Balance', numeric: true),
-                          setting('candidates', 'Candidates', numeric: true),
+                          setting('candidates', 'Candidates (1–1,000)', numeric: true),
                         ),
                         gap(),
                         pair(

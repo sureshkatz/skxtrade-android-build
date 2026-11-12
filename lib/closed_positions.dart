@@ -1,11 +1,27 @@
 part of 'main.dart';
 
-String liveQuote(AppModel app, String symbol, String side, int digits) {
+String liveQuote(AppModel app, String symbol, String side) {
+  bool matches(dynamic candidate) =>
+      candidate is String && candidate.toLowerCase() == symbol.toLowerCase();
+
   var tick = app.marketQuote.value;
-  if ('${tick['symbol']}'.toLowerCase() != symbol.toLowerCase()) {
-    tick = app.snapshot['symbol'] == symbol ? obj(app.snapshot['tick']) : {};
+  if (!matches(tick['symbol'])) {
+    tick = matches(app.snapshot['symbol']) ? obj(app.snapshot['tick']) : {};
   }
-  return numv(tick[side]) > 0 ? money(tick[side], decimals: digits) : '—';
+  final info = obj(app.snapshot['symbol_info']);
+  final precision = tick['digits'] ??
+      (matches(info['name'] ?? app.snapshot['symbol']) ? info['digits'] : null);
+  return numv(tick[side]) > 0 ? brokerPrice(tick[side], precision) : '—';
+}
+
+String brokerPrice(dynamic value, dynamic precision) {
+  final price = value is num ? value.toDouble() : double.tryParse('$value');
+  if (price == null || !price.isFinite) return '—';
+  final digits = int.tryParse('$precision');
+  if (digits != null && digits >= 0 && digits <= 12) {
+    return price.toStringAsFixed(digits);
+  }
+  return price.toStringAsFixed(8).replaceFirst(RegExp(r'\.?0+$'), '');
 }
 
 class ClosedPositions extends StatefulWidget {
@@ -134,8 +150,21 @@ class _ClosedPositionsState extends State<ClosedPositions> {
                                 title: Text(
                                   '${row['symbol']} · ${row['side']} · ${row['volume']} lots',
                                 ),
-                                subtitle: Text(
-                                  'Entry ${row['entryPrice'] ?? '—'}   Exit ${row['exitPrice']}\n${time.toIso8601String().substring(0, 16).replaceFirst('T', ' ')} UTC · #${row['ticket']}',
+                                subtitle: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Wrap(
+                                      spacing: 12,
+                                      children: [
+                                        Text('Entry ${brokerPrice(row['entryPrice'], row['priceDigits'])}'),
+                                        Text('Exit ${brokerPrice(row['exitPrice'], row['priceDigits'])}'),
+                                      ],
+                                    ),
+                                    Text(
+                                      '${time.toIso8601String().substring(0, 16).replaceFirst('T', ' ')} UTC · #${row['ticket']}',
+                                    ),
+                                  ],
                                 ),
                                 trailing: Text(money(row['net'])),
                               );

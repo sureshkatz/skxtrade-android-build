@@ -1,5 +1,72 @@
 part of 'main.dart';
 
+Future<String?> chooseMobileOption(
+  BuildContext context,
+  String title,
+  String current,
+  Map<String, String> choices, {
+  String? searchHint,
+}) => showModalBottomSheet<String>(
+  context: context,
+  isScrollControlled: true,
+  useSafeArea: true,
+  showDragHandle: true,
+  builder: (sheet) {
+    var query = '';
+    return StatefulBuilder(
+      builder: (sheet, update) {
+        final media = MediaQuery.of(sheet);
+        final rows = choices.entries
+            .where((entry) => entry.value.toLowerCase().contains(query))
+            .toList();
+        return Padding(
+          padding: EdgeInsets.only(bottom: media.viewInsets.bottom),
+          child: SizedBox(
+            height: (media.size.height - media.viewInsets.bottom) * .67,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              child: Column(
+                children: [
+                  heading(title),
+                  if (searchHint != null || choices.length > 12)
+                    TextField(
+                      decoration: InputDecoration(
+                        prefixIcon: const Icon(Icons.search),
+                        hintText: searchHint ?? 'Search',
+                      ),
+                      onChanged: (value) =>
+                          update(() => query = value.trim().toLowerCase()),
+                    ),
+                  Expanded(
+                    child: rows.isEmpty
+                        ? Center(
+                            child: Text(
+                              choices.isEmpty
+                                  ? 'No broker symbols loaded'
+                                  : 'No matching symbols',
+                            ),
+                          )
+                        : ListView.builder(
+                            itemCount: rows.length,
+                            itemBuilder: (context, i) => ListTile(
+                              title: Text(rows[i].value),
+                              trailing: rows[i].key == current
+                                  ? const Icon(Icons.check)
+                                  : null,
+                              onTap: () => Navigator.pop(sheet, rows[i].key),
+                            ),
+                          ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  },
+);
+
 /// Shared native selection sheet. Long broker/strategy lists are built lazily.
 class MobileSelect extends StatelessWidget {
   final String label, value;

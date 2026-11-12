@@ -113,57 +113,7 @@ class _TradingPageState extends State<TradingPage> {
     String title,
     String current,
     Map<String, String> choices,
-  ) async {
-    return showModalBottomSheet<String>(
-      context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      showDragHandle: true,
-      builder: (d) {
-        String query = '';
-        return StatefulBuilder(
-          builder: (d, update) => SizedBox(
-            height: MediaQuery.sizeOf(d).height * .67,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-              child: Column(
-                children: [
-                  heading(title),
-                  if (choices.length > 12)
-                    TextField(
-                      decoration: const InputDecoration(
-                        prefixIcon: Icon(Icons.search),
-                        hintText: 'Search',
-                      ),
-                      onChanged: (s) => update(() => query = s.toLowerCase()),
-                    ),
-                  Expanded(
-                    child: Builder(
-                      builder: (d) {
-                        final rows = choices.entries
-                            .where((e) => e.value.toLowerCase().contains(query))
-                            .toList();
-                        return ListView.builder(
-                          itemCount: rows.length,
-                          itemBuilder: (d, i) => ListTile(
-                            title: Text(rows[i].value),
-                            trailing: rows[i].key == current
-                                ? const Icon(Icons.check)
-                                : null,
-                            onTap: () => Navigator.pop(d, rows[i].key),
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
+  ) => chooseMobileOption(context, title, current, choices);
 
   Future<void> market(String next, String frame) async {
     if (next == symbol && frame == tf) return;
@@ -389,9 +339,6 @@ class _TradingPageState extends State<TradingPage> {
     final m = TradeScope.of(c);
     final names = m.symbols.map(symbolName).where((s) => s.isNotEmpty).toSet();
     if (symbol.isEmpty && names.isNotEmpty) symbol = names.first;
-    final digits = numv(
-      obj(m.snapshot['symbol_info'])['digits'],
-    ).toInt().clamp(0, 8).toInt();
     return Padding(
       padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
       child: Column(
@@ -570,19 +517,23 @@ class _TradingPageState extends State<TradingPage> {
                               ),
                             ),
                             const SizedBox(width: 10),
-                            ValueListenableBuilder<Map<String, dynamic>>(
-                              valueListenable: m.marketQuote,
-                              builder: (context, tick, _) => Text(
-                                liveQuote(
-                                  m,
-                                  symbol,
-                                  side == 'SELL' ? 'bid' : 'ask',
-                                  digits,
-                                ),
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w700,
-                                  fontSize: 14,
+                            Flexible(
+                              child: FittedBox(
+                                fit: BoxFit.scaleDown,
+                                child: ValueListenableBuilder<Map<String, dynamic>>(
+                                  valueListenable: m.marketQuote,
+                                  builder: (context, _, _) => Text(
+                                    liveQuote(
+                                      m,
+                                      symbol,
+                                      side == 'SELL' ? 'bid' : 'ask',
+                                    ),
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 14,
+                                    ),
+                                  ),
                                 ),
                               ),
                             ),
@@ -1693,11 +1644,13 @@ class _TestEntryFormState extends State<TestEntryForm> {
   final symbol = TextEditingController(),
       lot = TextEditingController(text: '0.01'),
       sl = TextEditingController(),
-      tp = TextEditingController();
+      tp = TextEditingController(),
+      limit = TextEditingController();
   bool busy = false;
+  String orderType = 'market';
   @override
   void dispose() {
-    for (final c in [symbol, lot, sl, tp]) {
+    for (final c in [symbol, lot, sl, tp, limit]) {
       c.dispose();
     }
     super.dispose();
@@ -1706,7 +1659,15 @@ class _TestEntryFormState extends State<TestEntryForm> {
   Future<void> send(String side) async {
     if (busy) return;
     final m = TradeScope.of(context);
+    final name = symbol.text.trim();
     final amount = double.tryParse(lot.text);
+    final pending = orderType == 'limit';
+    final price = double.tryParse(limit.text);
+    final label = pending ? '$side LIMIT' : side;
+    if (name.isEmpty) {
+      notice(context, 'Enter a broker symbol');
+      return;
+    }
     if (amount == null || !amount.isFinite || amount <= 0) {
       notice(context, 'Enter a valid lot size');
       return;
@@ -1720,31 +1681,51 @@ class _TestEntryFormState extends State<TestEntryForm> {
         return;
       }
     }
+    if (pending && (price == null || !price.isFinite || price <= 0)) {
+      notice(context, 'Enter a positive limit price');
+      return;
+    }
+    final stop = double.tryParse(sl.text);
+    final target = double.tryParse(tp.text);
     setState(() => busy = true);
     if (!await confirm(
       context,
-      'Send real $side order',
-      '${symbol.text} · $amount lots\nStop loss: ${sl.text.isEmpty ? 'None' : sl.text}\nTake profit: ${tp.text.isEmpty ? 'None' : tp.text}\n\nThis sends a real MT5 market order. Use a demo account for testing.',
-      action: 'Send $side',
+      'Send real $label order',
+      '$name · $amount lots\n${pending ? 'Limit price: ${limit.text}\n' : ''}'
+      'Stop loss: ${stop ?? 'None'}\nTake profit: ${target ?? 'None'}\n\n'
+      'This sends a real MT5 ${pending ? 'pending limit' : 'market'} order.',
+      action: 'Send $label',
     )) {
       if (mounted) setState(() => busy = false);
       return;
     }
     if (!mounted) return;
-    setState(() => busy = true);
     await brokerAction(
       context,
-      'order:${symbol.text}',
-      () => m.api.post('/api/mt5/live/order', {
-        'symbol': symbol.text.trim(),
+      'order:$name',
+      () => m.api.post(pending ? '/api/mt5/live/limit-order' : '/api/mt5/live/order', {
+        'symbol': name,
         'side': side,
         'volume': amount,
-        'sl': double.tryParse(sl.text),
-        'tp': double.tryParse(tp.text),
+        'sl': stop,
+        'tp': target,
+        if (pending) 'limitPrice': price,
         'confirm': true,
       }),
     );
     if (mounted) setState(() => busy = false);
+  }
+
+  Widget submitButton(String side) {
+    final label = side == 'BUY' ? 'Buy' : 'Sell';
+    return FilledButton(
+      onPressed: busy ? null : () => send(side),
+      style: FilledButton.styleFrom(
+        backgroundColor: side == 'BUY' ? const Color(0xff009a7b) : const Color(0xffd6425b),
+        foregroundColor: Colors.white,
+      ),
+      child: Text(orderType == 'limit' ? '$label Limit' : label),
+    );
   }
 
   @override
@@ -1766,6 +1747,28 @@ class _TestEntryFormState extends State<TestEntryForm> {
               ),
               field(symbol, 'Symbol'),
               gap(),
+              if (widget.initialSide != null) ...[
+                DropdownButtonFormField<String>(
+                  initialValue: orderType,
+                  decoration: const InputDecoration(labelText: 'Order type'),
+                  items: const [
+                    DropdownMenuItem(value: 'market', child: Text('Market Order')),
+                    DropdownMenuItem(value: 'limit', child: Text('Limit Order')),
+                  ],
+                  onChanged: busy ? null : (value) {
+                    if (value != null) setState(() => orderType = value);
+                  },
+                ),
+                gap(),
+                if (orderType == 'limit') ...[
+                  field(
+                    limit,
+                    'Limit price',
+                    keyboard: const TextInputType.numberWithOptions(decimal: true),
+                  ),
+                  gap(),
+                ],
+              ],
               field(
                 lot,
                 'Lot size',
@@ -1789,28 +1792,10 @@ class _TestEntryFormState extends State<TestEntryForm> {
                 ),
               ),
               gap(),
-              pair(
-                FilledButton(
-                  onPressed: busy || widget.initialSide == 'SELL'
-                      ? null
-                      : () => send('BUY'),
-                  style: FilledButton.styleFrom(
-                    backgroundColor: const Color(0xff009a7b),
-                    foregroundColor: Colors.white,
-                  ),
-                  child: const Text('Buy'),
-                ),
-                OutlinedButton(
-                  onPressed: busy || widget.initialSide == 'BUY'
-                      ? null
-                      : () => send('SELL'),
-                  style: OutlinedButton.styleFrom(
-                    backgroundColor: const Color(0xffd6425b),
-                    foregroundColor: Colors.white,
-                  ),
-                  child: const Text('Sell'),
-                ),
-              ),
+              if (widget.initialSide case final side?)
+                SizedBox(width: double.infinity, child: submitButton(side))
+              else
+                pair(submitButton('BUY'), submitButton('SELL')),
               gap(),
               const Text(
                 'These actions execute real orders through your Windows MT5 terminal.',

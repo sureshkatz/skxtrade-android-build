@@ -16,6 +16,86 @@ import 'package:skxtrade_mobile/themes.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  for (final side in ['BUY', 'SELL']) {
+    testWidgets('Chart order sheet shows only the $side submit button', (tester) async {
+      final model = AppModel();
+      await tester.pumpWidget(
+        TradeScope(
+          model: model,
+          child: MaterialApp(
+            home: Scaffold(
+              body: TestEntryForm(initialSymbol: 'XAUUSDm', initialSide: side),
+            ),
+          ),
+        ),
+      );
+      final chosen = side == 'BUY' ? 'Buy' : 'Sell';
+      final opposite = side == 'BUY' ? 'Sell' : 'Buy';
+      expect(find.widgetWithText(FilledButton, chosen), findsOneWidget);
+      expect(find.widgetWithText(FilledButton, opposite), findsNothing);
+      await tester.tap(find.text('Market Order'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Limit Order').last);
+      await tester.pumpAndSettle();
+      expect(find.text('Limit price'), findsOneWidget);
+      expect(find.widgetWithText(FilledButton, '$chosen Limit'), findsOneWidget);
+    });
+  }
+  test('Closed fill prices use broker precision and hide floating-point noise', () {
+    expect(brokerPrice(3957.2159999999994, 3), '3957.216');
+    expect(brokerPrice(3960.3109999999997, null), '3960.311');
+    expect(brokerPrice(73560.36, 2), '73560.36');
+    expect(brokerPrice(null, 3), '—');
+  });
+  test('Trade quotes preserve decimals when the symbol snapshot is missing', () {
+    final model = AppModel();
+    model.snapshot = {
+      'symbol': 'OTHER',
+      'symbol_info': {'name': 'OTHER', 'digits': 0},
+    };
+    model.marketQuote.value = {'symbol': 'XAUUSDm', 'bid': 3944.15, 'ask': 3944.16};
+    expect(liveQuote(model, 'XAUUSDM', 'bid'), '3944.15');
+    model.marketQuote.value = {...model.marketQuote.value, 'digits': 3};
+    expect(liveQuote(model, 'XAUUSDM', 'ask'), '3944.160');
+    expect(liveQuote(model, 'BTCUSDm', 'ask'), '—');
+  });
+  for (final optimize in [false, true]) {
+    testWidgets('Research broker symbol search applies selection (optimize: $optimize)', (
+      tester,
+    ) async {
+      final model = AppModel()
+        ..prefs = await SharedPreferences.getInstance()
+        ..selectedSymbol = 'EURUSDm'
+        ..symbols = ['EURUSDm', {'symbol': 'XAUUSDm'}, 'BTCUSDm'];
+      await tester.pumpWidget(
+        TradeScope(
+          model: model,
+          child: MaterialApp(home: ResearchPage(optimize: optimize)),
+        ),
+      );
+      await tester.tap(find.byTooltip('Search broker symbols'));
+      await tester.pumpAndSettle();
+      final search = find.byWidgetPredicate(
+        (widget) =>
+            widget is TextField &&
+            widget.decoration?.hintText == 'Search broker symbols',
+      );
+      await tester.enterText(search, 'xau');
+      await tester.pumpAndSettle();
+      expect(find.text('BTCUSDm'), findsNothing);
+      await tester.tap(find.text('XAUUSDm'));
+      await tester.pumpAndSettle();
+      final field = tester.widget<TextField>(
+        find.byWidgetPredicate(
+          (widget) =>
+              widget is TextField &&
+              widget.decoration?.labelText == 'Broker symbol',
+        ),
+      );
+      expect(field.controller?.text, 'XAUUSDm');
+      await tester.pumpWidget(const SizedBox());
+    });
+  }
   setUp(() {
     FlutterSecureStorage.setMockInitialValues({});
     SharedPreferences.setMockInitialValues({});

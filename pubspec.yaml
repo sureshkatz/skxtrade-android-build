@@ -1,7 +1,7 @@
 name: skxtrade_mobile
 description: SKX Trade Android companion for the authenticated Windows trading engine.
 publish_to: none
-version: 1.2.5+2008
+version: 1.2.6+2009
 environment:
   sdk: '>=3.10.0 <4.0.0'
 dependencies:

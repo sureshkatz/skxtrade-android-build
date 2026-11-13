@@ -85,14 +85,7 @@ void main() {
       expect(find.text('BTCUSDm'), findsNothing);
       await tester.tap(find.text('XAUUSDm'));
       await tester.pumpAndSettle();
-      final field = tester.widget<TextField>(
-        find.byWidgetPredicate(
-          (widget) =>
-              widget is TextField &&
-              widget.decoration?.labelText == 'Broker symbol',
-        ),
-      );
-      expect(field.controller?.text, 'XAUUSDm');
+      expect(find.text('XAUUSDm'), findsOneWidget);
       await tester.pumpWidget(const SizedBox());
     });
   }

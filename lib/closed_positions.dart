@@ -123,10 +123,9 @@ class _ClosedPositionsState extends State<ClosedPositions> {
               );
               return Column(
                 children: [
-                  dropdown('Symbol', active, {
-                    '': 'All symbols',
-                    for (final name in names) name: name,
-                  }, (value) => setState(() => symbol = value)),
+                  brokerSymbolField(context, 'Symbol', active,
+                      (value) => setState(() => symbol = value),
+                      historySymbols: names.toSet()),
                   gap(),
                   Text(
                     '${shown.length} closing fills · Net ${money(net)} ${data['currency'] ?? ''} · UTC',

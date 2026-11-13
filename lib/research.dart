@@ -548,31 +548,6 @@ class _ResearchPageState extends State<ResearchPage> {
     );
   }
 
-  Future<void> searchBrokerSymbol(AppModel app) async {
-    try {
-      var catalog = app.symbols;
-      if (catalog.isEmpty) {
-        final response = await app.api.get('/api/symbols?limit=0');
-        catalog = response is List ? response : arr(obj(response)['symbols']);
-      }
-      if (!mounted || active) return;
-      final choices = <String, String>{
-        for (final name in catalog.map(symbolName))
-          if (name.isNotEmpty) name: name,
-      };
-      final selected = await chooseMobileOption(
-        context,
-        'Broker symbols',
-        symbol.text.trim(),
-        choices,
-        searchHint: 'Search broker symbols',
-      );
-      if (selected != null && mounted && !active) symbol.text = selected;
-    } catch (e) {
-      if (mounted) notice(context, 'Could not load broker symbols. $e');
-    }
-  }
-
   Widget setup(BuildContext c) {
     final m = TradeScope.of(c);
     return ListView(
@@ -602,18 +577,9 @@ class _ResearchPageState extends State<ResearchPage> {
                       }),
               ),
               gap(),
-              TextField(
-                controller: symbol,
-                enabled: !active && !busy,
-                decoration: InputDecoration(
-                  labelText: 'Broker symbol',
-                  suffixIcon: IconButton(
-                    tooltip: 'Search broker symbols',
-                    onPressed: active || busy ? null : () => searchBrokerSymbol(m),
-                    icon: const Icon(Icons.search),
-                  ),
-                ),
-              ),
+              brokerSymbolField(c, 'Broker symbol', symbol.text,
+                  (value) => setState(() => symbol.text = value),
+                  enabled: !active && !busy),
               gap(),
               pair(
                 dropdown(

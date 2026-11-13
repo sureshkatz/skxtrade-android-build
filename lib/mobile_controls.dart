@@ -1,5 +1,52 @@
 part of 'main.dart';
 
+Future<String?> pickBrokerSymbol(
+  BuildContext context,
+  String current, {
+  Set<String>? historySymbols,
+}) async {
+  final model = TradeScope.of(context);
+  try {
+    var catalog = model.symbols;
+    if (catalog.isEmpty && historySymbols == null) {
+      final response = await model.api.get('/api/symbols?limit=0');
+      catalog = response is List ? response : arr(obj(response)['symbols']);
+    }
+    if (!context.mounted) return null;
+    final names = (historySymbols ?? catalog.map(symbolName).toSet())
+        .where((name) => name.isNotEmpty).toList()..sort();
+    return chooseMobileOption(context, 'Broker symbols', current, {
+      if (historySymbols != null) '': 'All symbols',
+      for (final name in names) name: name,
+    }, searchHint: 'Search broker symbols');
+  } catch (error) {
+    if (context.mounted) notice(context, 'Could not load broker symbols. $error');
+    return null;
+  }
+}
+
+Widget brokerSymbolField(
+  BuildContext context, String label, String value, ValueChanged<String> changed, {
+  bool enabled = true,
+  Set<String>? historySymbols,
+}) => InputDecorator(
+  decoration: InputDecoration(labelText: label, enabled: enabled),
+  child: InkWell(
+    onTap: enabled ? () async {
+      final selected = await pickBrokerSymbol(context, value, historySymbols: historySymbols);
+      if (selected != null && context.mounted) changed(selected);
+    } : null,
+    child: Row(
+      children: [
+        Expanded(child: Text(value.isEmpty
+            ? (historySymbols == null ? 'Select broker symbol' : 'All symbols')
+            : value, overflow: TextOverflow.ellipsis)),
+        const Tooltip(message: 'Search broker symbols', child: Icon(Icons.arrow_drop_down)),
+      ],
+    ),
+  ),
+);
+
 Future<String?> chooseMobileOption(
   BuildContext context,
   String title,

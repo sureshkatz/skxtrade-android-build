@@ -629,7 +629,7 @@ class _AiPageState extends State<AiPage> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         pair(
-                          setting('symbol', 'Market'),
+                          brokerSymbolField(c, 'Market', '${setup['symbol'] ?? ''}', (value) => changed('symbol', value), enabled: !running),
                           dropdown(
                             'Timeframe',
                             '${setup['timeframe'] ?? 'M5'}',

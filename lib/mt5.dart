@@ -346,9 +346,7 @@ class _TradingPageState extends State<TradingPage> {
           Row(
             children: [
               control('Symbol', symbol, Icons.search, () async {
-                final s = await choose('Symbol', symbol, {
-                  for (final n in names) n: n,
-                });
+                final s = await pickBrokerSymbol(c, symbol);
                 if (s != null && mounted) market(s, tf);
               }),
               control(
@@ -1535,7 +1533,7 @@ class _DeployStrategyPageState extends State<DeployStrategyPage> {
             onChanged: (s) => setState(() => strategy = s),
           ),
           gap(),
-          field(symbol, 'Broker symbol'),
+          brokerSymbolField(c, 'Broker symbol', symbol.text, (value) => setState(() => symbol.text = value), enabled: !busy),
           gap(),
           dropdown('Timeframe', tf, {
             'M1': 'M1',
@@ -1745,7 +1743,7 @@ class _TestEntryFormState extends State<TestEntryForm> {
                     ? 'Test Entry'
                     : '${widget.initialSide} · ${widget.initialSymbol}',
               ),
-              field(symbol, 'Symbol'),
+              brokerSymbolField(c, 'Symbol', symbol.text, (value) => setState(() => symbol.text = value), enabled: !busy),
               gap(),
               if (widget.initialSide != null) ...[
                 DropdownButtonFormField<String>(

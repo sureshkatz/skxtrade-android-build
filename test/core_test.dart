@@ -118,8 +118,10 @@ void main() {
     expect(find.text('Lot size'), findsOneWidget);
     await tester.enterText(find.widgetWithText(TextField, 'Lot size'), '0.02');
     await tester.testTextInput.receiveAction(TextInputAction.done);
-    await tester.ensureVisible(find.text('Create & Deploy'));
-    await tester.tap(find.text('Create & Deploy'));
+    final deploy = find.widgetWithText(FilledButton, 'Create & Deploy');
+    await tester.scrollUntilVisible(deploy, 130);
+    await tester.pumpAndSettle();
+    await tester.tap(deploy);
     await tester.pumpAndSettle();
     expect(find.textContaining('Demo MT5 account 1234'), findsOneWidget);
     expect(find.textContaining('0.02 lots'), findsOneWidget);
@@ -716,7 +718,10 @@ computed = input.int(someVariable)
         ),
       ),
     );
-    await tester.tap(find.byTooltip('Delete connection').last);
+    final deleteSecond = find.byTooltip('Delete connection').last;
+    await tester.ensureVisible(deleteSecond);
+    await tester.pumpAndSettle();
+    await tester.tap(deleteSecond);
     await tester.pumpAndSettle();
     expect(find.text('Delete Second?'), findsOneWidget);
     expect(deleted, isNull);

@@ -119,7 +119,13 @@ void main() {
     await tester.enterText(find.widgetWithText(TextField, 'Lot size'), '0.02');
     await tester.testTextInput.receiveAction(TextInputAction.done);
     final deploy = find.widgetWithText(FilledButton, 'Create & Deploy');
-    await tester.scrollUntilVisible(deploy, 130);
+    await tester.scrollUntilVisible(
+      deploy,
+      130,
+      scrollable: find.byWidgetPredicate(
+        (widget) => widget is Scrollable && widget.axisDirection == AxisDirection.down,
+      ),
+    );
     await tester.pumpAndSettle();
     await tester.tap(deploy);
     await tester.pumpAndSettle();

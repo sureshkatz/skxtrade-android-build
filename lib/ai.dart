@@ -418,11 +418,16 @@ class _AiPageState extends State<AiPage> {
   Future<void> startRun() async {
     if (running) return;
     if (!account.containsKey('connected') || account['connected'] != true) {
-      notice(context, 'Connect ChatGPT first.');
+      notice(context, 'Connect ChatGPT in Settings first.');
       return;
     }
     if ('${setup['instructions'] ?? ''}'.trim().isEmpty) {
       notice(context, 'Enter strategy instructions.');
+      return;
+    }
+    final weekendError = weekendCloseError(obj(setup['weekendClose']));
+    if (weekendError != null) {
+      notice(context, weekendError);
       return;
     }
     setState(() => busy = true);
@@ -444,65 +449,36 @@ class _AiPageState extends State<AiPage> {
     }
   }
 
-  Future<void> connectChatGPT() async {
+  Future<void> clearBacktestCache() async {
+    final accepted = await confirm(context, 'Clear backtest cache?',
+      'Delete reusable backtest data. Saved strategies and live connections will be kept.',
+      action: 'Clear cache');
+    if (!accepted || !mounted) return;
+    setState(() => busy = true);
     try {
-      final x = obj(
-        await TradeScope.of(context).api.post('/api/ai-trading/connect'),
-      );
-      final url = Uri.tryParse('${x['verificationUrl'] ?? ''}');
-      if (url == null ||
-          url.scheme != 'https' ||
-          ![
-            'auth.openai.com',
-            'chatgpt.com',
-            'login.openai.com',
-          ].contains(url.host))
-        throw ApiError(
-          'The backend did not return an approved OpenAI sign-in URL.',
-        );
-      if (!mounted) return;
-      await showDialog(
-        context: context,
-        builder: (d) => AlertDialog(
-          title: const Text('Connect ChatGPT'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text('Open the official sign-in page and enter this code:'),
-              gap(),
-              SelectableText(
-                '${x['userCode'] ?? ''}',
-                style: const TextStyle(
-                  fontSize: 23,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              gap(),
-              const Text(
-                'The sign-in session is handled by your Windows backend. No API key is required.',
-                style: TextStyle(fontSize: 12),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(d),
-              child: const Text('Close'),
-            ),
-            FilledButton(
-              onPressed: () =>
-                  launchUrl(url, mode: LaunchMode.externalApplication),
-              child: const Text('Open sign-in page'),
-            ),
-          ],
-        ),
-      );
-      listsChecked = null;
-      await loadStatus();
+      await TradeScope.of(context).api.post('/api/ai-trading/clear-backtest-cache', {'confirm': true});
+      if (mounted) notice(context, 'Backtest cache cleared.');
     } catch (e) {
       if (mounted) notice(context, e);
+    } finally {
+      if (mounted) setState(() => busy = false);
     }
+  }
+
+  String get period {
+    final value = '${setup['period'] ?? 'custom'}';
+    return value != '1W' && researchPeriods.containsKey(value) ? value : 'custom';
+  }
+
+  void selectPeriod(String value) {
+    setState(() {
+      if (value != 'custom') {
+        final end = DateTime.now();
+        setup['from'] = dateOnly(presetStart(value, end));
+        setup['to'] = dateOnly(end);
+      }
+      changed('period', value);
+    });
   }
 
   Future<void> control(String action) async {
@@ -538,31 +514,39 @@ class _AiPageState extends State<AiPage> {
                   style: TextStyle(fontSize: 21, fontWeight: FontWeight.w600),
                 ),
               ),
-              TextButton(
-                onPressed: connectChatGPT,
-                child: Text(
-                  account['connected'] == true
-                      ? '● ChatGPT connected'
-                      : 'Connect ChatGPT',
-                  style: TextStyle(
-                    fontSize: 10,
-                    color: account['connected'] == true
-                        ? m.style.good
-                        : m.style.primary,
-                  ),
-                ),
+              Text(
+                account.isEmpty ? 'Checking ChatGPT' : account['connected'] == true
+                    ? 'ChatGPT connected' : 'ChatGPT disconnected',
+                style: TextStyle(fontSize: 10,
+                  color: account['connected'] == true ? m.style.good : m.style.muted),
               ),
             ],
           ),
           gap(6),
-          tabs(c, ['Setup', 'Progress', 'Saved', 'Run history'], tab, (i) {
-            setState(() {
-              tab = i;
-              statusGeneration++;
-              page = 0;
-            });
-            loadStatus();
-          }),
+          Row(children: [
+            Expanded(child: tabs(c, ['Setup', 'Progress', 'Saved', 'Run history'], tab, (i) {
+              setState(() {
+                tab = i;
+                statusGeneration++;
+                page = 0;
+              });
+              loadStatus();
+            })),
+            const SizedBox(width: 6),
+            FilledButton(
+              onPressed: busy || running || setup.isEmpty ? null : startRun,
+              style: FilledButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 9)),
+              child: Text(busy ? 'Wait…' : 'Start AI', style: const TextStyle(fontSize: 11)),
+            ),
+          ]),
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton(
+              onPressed: busy || running || setup.isEmpty ? null : clearBacktestCache,
+              style: TextButton.styleFrom(foregroundColor: m.style.bad),
+              child: const Text('Clear Backtest Cache'),
+            ),
+          ),
           gap(),
           if (error.isNotEmpty)
             Padding(
@@ -629,7 +613,9 @@ class _AiPageState extends State<AiPage> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         pair(
-                          brokerSymbolField(c, 'Market', '${setup['symbol'] ?? ''}', (value) => changed('symbol', value), enabled: !running),
+                          brokerSymbolField(c, '${setup['symbol'] ?? ''}',
+                            (v) => setState(() => changed('symbol', v)),
+                            label: 'Market', enabled: !running),
                           dropdown(
                             'Timeframe',
                             '${setup['timeframe'] ?? 'M5'}',
@@ -638,12 +624,20 @@ class _AiPageState extends State<AiPage> {
                           ),
                         ),
                         gap(),
-                        pair(aiDate('from', 'From'), aiDate('to', 'To')),
-                        gap(),
                         pair(
-                          setting('balance', 'Balance', numeric: true),
-                          setting('candidates', 'Candidates (1–1,000)', numeric: true),
+                          setting('balance', 'Initial balance', numeric: true),
+                          MobileSelect(label: 'Period', value: period,
+                            options: {...researchPeriods}..remove('1W'),
+                            onChanged: running ? null : selectPeriod),
                         ),
+                        gap(7),
+                        if (period == 'custom')
+                          pair(aiDate('from', 'From'), aiDate('to', 'To'))
+                        else
+                          Text('${setup['from']} → ${setup['to']}',
+                            style: TextStyle(fontSize: 11, color: TradeScope.of(c).style.muted)),
+                        gap(),
+                        setting('candidates', 'Candidates (1–1,000)', numeric: true),
                         gap(),
                         pair(
                           setting('minutes', 'Limit (min)', numeric: true),
@@ -739,6 +733,9 @@ class _AiPageState extends State<AiPage> {
                           },
                         ),
                         gap(),
+                        WeekendCloseFields(value: obj(setup['weekendClose']), enabled: !running,
+                          onChanged: (v) => setState(() => changed('weekendClose', v))),
+                        gap(),
                         rule('spread', 'Custom spread', unit: 'points'),
                         rule(
                           'slippage',
@@ -761,15 +758,6 @@ class _AiPageState extends State<AiPage> {
                     ),
             ),
           ],
-        ),
-      ),
-      gap(8),
-      SizedBox(
-        width: double.infinity,
-        child: FilledButton.icon(
-          onPressed: busy || running ? null : startRun,
-          icon: const Icon(Icons.auto_awesome, size: 17),
-          label: Text(busy ? 'Starting…' : 'Start AI'),
         ),
       ),
       gap(5),
@@ -958,7 +946,7 @@ class _AiPageState extends State<AiPage> {
         OutlinedButton(
           onPressed: () => openPage(
             c,
-            JsonDetailPage(title: 'Strategy results', data: results),
+            AiCandidateResults(rows: results),
           ),
           child: const Text('Strategy results & rejection reasons'),
         ),
@@ -1752,10 +1740,7 @@ class _AiRunDetailState extends State<AiRunDetail> {
               OutlinedButton(
                 onPressed: () => openPage(
                   c,
-                  JsonDetailPage(
-                    title: 'Results & rejection reasons',
-                    data: run['results'],
-                  ),
+                  AiCandidateResults(rows: arr(run['results'])),
                 ),
                 child: const Text('Strategy results'),
               ),
@@ -1806,6 +1791,33 @@ class _AiRunDetailState extends State<AiRunDetail> {
               ),
             ],
           ),
+  );
+}
+
+class AiCandidateResults extends StatelessWidget {
+  final List<dynamic> rows;
+  const AiCandidateResults({super.key, required this.rows});
+
+  @override
+  Widget build(BuildContext c) => Scaffold(
+    appBar: AppBar(title: const Text('Strategy results')),
+    body: rows.isEmpty ? const Center(child: Text('No results yet.')) : ListView.builder(
+      padding: const EdgeInsets.all(12),
+      itemCount: rows.length,
+      itemBuilder: (context, index) {
+        final row = obj(rows[index]);
+        final saved = row['status'] == 'saved';
+        return ListTile(
+          title: Text('${row['name'] ?? 'Strategy'}'),
+          subtitle: Text(saved ? 'Saved · Report and equity curve' :
+            arr(row['reasons']).join('\n')),
+          trailing: saved ? const Icon(Icons.show_chart) : null,
+          onTap: () => openPage(context, saved
+            ? AiSavedDetail(id: '${row['id']}')
+            : JsonDetailPage(title: '${row['name'] ?? 'Result'}', data: row)),
+        );
+      },
+    ),
   );
 }
 

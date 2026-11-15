@@ -543,6 +543,14 @@ class _TradingPageState extends State<TradingPage> {
               ],
             ),
           ),
+          ValueListenableBuilder<Map<String, dynamic>>(
+            valueListenable: m.marketQuote,
+            builder: (context, _, _) => Padding(
+              padding: const EdgeInsets.only(bottom: 5),
+              child: Text('Spread ${liveSpread(m, symbol)}',
+                style: TextStyle(fontSize: 10, color: m.style.muted)),
+            ),
+          ),
         ],
       ),
     );
@@ -1175,6 +1183,10 @@ class _Mt5PageState extends State<Mt5Page> {
                               'Connection ${s['id']}',
                               style: TextStyle(fontSize: 10, color: t.muted),
                             ),
+                            TextButton(
+                              onPressed: () => openPage(c, EditLivePinePage(connection: s)),
+                              child: Text(status == 'Stopped' ? 'Edit Pine inputs' : 'View Pine inputs'),
+                            ),
                             gap(8),
                             Row(
                               children: [
@@ -1433,7 +1445,7 @@ Widget tabs(
                 alignment: Alignment.center,
                 padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 8),
                 decoration: BoxDecoration(
-                  color: current == i ? t.paper : Colors.transparent,
+                  color: current == i ? Color.alphaBlend(t.primary.withValues(alpha: .09), t.paper) : Colors.transparent,
                   borderRadius: BorderRadius.circular(9),
                   boxShadow: current == i
                       ? [
@@ -1503,6 +1515,8 @@ class _DeployStrategyPageState extends State<DeployStrategyPage> {
   String? strategy;
   String tf = 'M30', calc = 'close', lotMode = 'pine';
   bool busy = false;
+  final form = GlobalKey<FormState>();
+  final pineInputs = <String, dynamic>{};
   final symbol = TextEditingController();
   final lot = TextEditingController(text: '0.01');
   @override
@@ -1520,7 +1534,7 @@ class _DeployStrategyPageState extends State<DeployStrategyPage> {
     if (symbol.text.isEmpty) symbol.text = m.selectedSymbol;
     return Scaffold(
       appBar: AppBar(title: const Text('Create Live Strategy')),
-      body: ListView(
+      body: Form(key: form, child: ListView(
         padding: const EdgeInsets.all(18),
         children: [
           DropdownButtonFormField<String>(
@@ -1530,10 +1544,14 @@ class _DeployStrategyPageState extends State<DeployStrategyPage> {
             items: m.scripts.keys
                 .map((s) => DropdownMenuItem(value: s, child: Text(s)))
                 .toList(),
-            onChanged: (s) => setState(() => strategy = s),
+            onChanged: busy ? null : (s) => setState(() {
+              strategy = s;
+              pineInputs.clear();
+            }),
           ),
           gap(),
-          brokerSymbolField(c, 'Broker symbol', symbol.text, (value) => setState(() => symbol.text = value), enabled: !busy),
+          brokerSymbolField(c, symbol.text,
+            (v) => setState(() => symbol.text = v), enabled: !busy),
           gap(),
           dropdown('Timeframe', tf, {
             'M1': 'M1',
@@ -1562,11 +1580,23 @@ class _DeployStrategyPageState extends State<DeployStrategyPage> {
               keyboard: const TextInputType.numberWithOptions(decimal: true),
             ),
           ],
+          if (strategy != null) ...[
+            gap(),
+            box(LivePineFields(key: ValueKey(strategy),
+              source: '${obj(m.scripts[strategy])['source'] ?? ''}',
+              values: pineInputs, enabled: !busy)),
+          ],
           gap(),
           FilledButton(
             onPressed: busy || strategy == null
                 ? null
                 : () async {
+                    if (form.currentState?.validate() != true) return;
+                    form.currentState!.save();
+                    if (symbol.text.trim().isEmpty) {
+                      notice(c, 'Select a broker symbol.');
+                      return;
+                    }
                     final amount = double.tryParse(lot.text);
                     if (lotMode == 'fixed' &&
                         (amount == null || !amount.isFinite || amount <= 0)) {
@@ -1579,6 +1609,7 @@ class _DeployStrategyPageState extends State<DeployStrategyPage> {
                       '$accountLabel\n$strategy · ${symbol.text} · $tf\n${calc == 'tick' ? 'On every tick' : 'On candle close'} · ${lotMode == 'fixed' ? '$amount lots' : 'Pine / Auto Lot'}\nSL and TP follow Pine.',
                     ))
                       return;
+                    if (!mounted) return;
                     setState(() => busy = true);
                     try {
                       final s = obj(m.scripts[strategy]);
@@ -1590,6 +1621,7 @@ class _DeployStrategyPageState extends State<DeployStrategyPage> {
                           'timeframe': tf,
                           'calcMode': calc,
                           'lotMode': lotMode,
+                          'pineInputs': pineInputs,
                           if (lotMode == 'fixed') 'lotSize': amount,
                           'start': true,
                         }),
@@ -1608,7 +1640,7 @@ class _DeployStrategyPageState extends State<DeployStrategyPage> {
             child: Text(busy ? 'Deploying…' : 'Create & Deploy'),
           ),
         ],
-      ),
+      )),
     );
   }
 }
@@ -1645,7 +1677,7 @@ class _TestEntryFormState extends State<TestEntryForm> {
       tp = TextEditingController(),
       limit = TextEditingController();
   bool busy = false;
-  String orderType = 'market';
+  String orderType = 'market', testSide = 'BUY';
   @override
   void dispose() {
     for (final c in [symbol, lot, sl, tp, limit]) {
@@ -1743,29 +1775,34 @@ class _TestEntryFormState extends State<TestEntryForm> {
                     ? 'Test Entry'
                     : '${widget.initialSide} · ${widget.initialSymbol}',
               ),
-              brokerSymbolField(c, 'Symbol', symbol.text, (value) => setState(() => symbol.text = value), enabled: !busy),
+              brokerSymbolField(c, symbol.text, (v) => setState(() => symbol.text = v),
+                label: 'Symbol', enabled: !busy),
               gap(),
-              if (widget.initialSide != null) ...[
-                DropdownButtonFormField<String>(
-                  initialValue: orderType,
-                  decoration: const InputDecoration(labelText: 'Order type'),
-                  items: const [
-                    DropdownMenuItem(value: 'market', child: Text('Market Order')),
-                    DropdownMenuItem(value: 'limit', child: Text('Limit Order')),
-                  ],
-                  onChanged: busy ? null : (value) {
-                    if (value != null) setState(() => orderType = value);
-                  },
+              if (widget.initialSide == null) ...[
+                MobileSelect(label: 'Side', value: testSide,
+                  options: const {'BUY': 'Buy', 'SELL': 'Sell'},
+                  onChanged: busy ? null : (v) => setState(() => testSide = v)),
+                gap(),
+              ],
+              DropdownButtonFormField<String>(
+                initialValue: orderType,
+                decoration: const InputDecoration(labelText: 'Order type'),
+                items: const [
+                  DropdownMenuItem(value: 'market', child: Text('Market Order')),
+                  DropdownMenuItem(value: 'limit', child: Text('Limit Order')),
+                ],
+                onChanged: busy ? null : (value) {
+                  if (value != null) setState(() => orderType = value);
+                },
+              ),
+              gap(),
+              if (orderType == 'limit') ...[
+                field(
+                  limit,
+                  'Limit price',
+                  keyboard: const TextInputType.numberWithOptions(decimal: true),
                 ),
                 gap(),
-                if (orderType == 'limit') ...[
-                  field(
-                    limit,
-                    'Limit price',
-                    keyboard: const TextInputType.numberWithOptions(decimal: true),
-                  ),
-                  gap(),
-                ],
               ],
               field(
                 lot,
@@ -1790,10 +1827,8 @@ class _TestEntryFormState extends State<TestEntryForm> {
                 ),
               ),
               gap(),
-              if (widget.initialSide case final side?)
-                SizedBox(width: double.infinity, child: submitButton(side))
-              else
-                pair(submitButton('BUY'), submitButton('SELL')),
+              SizedBox(width: double.infinity,
+                child: submitButton(widget.initialSide ?? testSide)),
               gap(),
               const Text(
                 'These actions execute real orders through your Windows MT5 terminal.',

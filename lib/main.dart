@@ -25,6 +25,8 @@ part 'home.dart';
 part 'mobile_controls.dart';
 part 'trade_details.dart';
 part 'closed_positions.dart';
+part 'parity_settings.dart';
+part 'chatgpt_settings.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -54,6 +56,8 @@ class AppModel extends ChangeNotifier with WidgetsBindingObserver {
   TradeStyle style = styles.first;
   Map<String, dynamic> snapshot = {}, scripts = {}, protection = {};
   List<dynamic> strategies = [], symbols = [];
+  int optimizationLimit = 500;
+  bool optimizationLimitLoaded = false;
   String connection = 'Offline',
       error = '',
       selectedSymbol = '',
@@ -206,6 +210,15 @@ class AppModel extends ChangeNotifier with WidgetsBindingObserver {
       try {
         d = await api.get('/api/mobile/snapshot$path');
         patchAvailable = true;
+        if (!optimizationLimitLoaded) {
+          try {
+            final version = obj(await api.get('/api/mobile/version'));
+            optimizationLimit = version['optimizationMaxCombinations'] == 1000 ? 1000 : 500;
+            optimizationLimitLoaded = true;
+          } catch (_) {
+            // Older servers retain the lower limit.
+          }
+        }
       } on ApiError catch (e) {
         if (e.status == 404) {
           d = await api.get('/api/mt5/details$path');
@@ -277,6 +290,8 @@ class AppModel extends ChangeNotifier with WidgetsBindingObserver {
     scripts = {};
     strategies = [];
     symbols = [];
+    optimizationLimit = 500;
+    optimizationLimitLoaded = false;
     connection = 'Offline';
     notifyListeners();
   }
@@ -794,6 +809,17 @@ class SettingsPage extends StatelessWidget {
               ),
               trailing: const Icon(Icons.chevron_right),
               onTap: () => openPage(c, const ConnectionSettings()),
+            ),
+          ),
+          gap(),
+          box(
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(Icons.auto_awesome_outlined, color: m.style.primary),
+              title: const Text('ChatGPT'),
+              subtitle: const Text('Connection, account and model'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => openPage(c, const ChatGPTSettingsPage()),
             ),
           ),
           gap(20),

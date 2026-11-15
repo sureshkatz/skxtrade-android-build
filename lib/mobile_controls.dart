@@ -1,52 +1,5 @@
 part of 'main.dart';
 
-Future<String?> pickBrokerSymbol(
-  BuildContext context,
-  String current, {
-  Set<String>? historySymbols,
-}) async {
-  final model = TradeScope.of(context);
-  try {
-    var catalog = model.symbols;
-    if (catalog.isEmpty && historySymbols == null) {
-      final response = await model.api.get('/api/symbols?limit=0');
-      catalog = response is List ? response : arr(obj(response)['symbols']);
-    }
-    if (!context.mounted) return null;
-    final names = (historySymbols ?? catalog.map(symbolName).toSet())
-        .where((name) => name.isNotEmpty).toList()..sort();
-    return chooseMobileOption(context, 'Broker symbols', current, {
-      if (historySymbols != null) '': 'All symbols',
-      for (final name in names) name: name,
-    }, searchHint: 'Search broker symbols');
-  } catch (error) {
-    if (context.mounted) notice(context, 'Could not load broker symbols. $error');
-    return null;
-  }
-}
-
-Widget brokerSymbolField(
-  BuildContext context, String label, String value, ValueChanged<String> changed, {
-  bool enabled = true,
-  Set<String>? historySymbols,
-}) => InputDecorator(
-  decoration: InputDecoration(labelText: label, enabled: enabled),
-  child: InkWell(
-    onTap: enabled ? () async {
-      final selected = await pickBrokerSymbol(context, value, historySymbols: historySymbols);
-      if (selected != null && context.mounted) changed(selected);
-    } : null,
-    child: Row(
-      children: [
-        Expanded(child: Text(value.isEmpty
-            ? (historySymbols == null ? 'Select broker symbol' : 'All symbols')
-            : value, overflow: TextOverflow.ellipsis)),
-        const Tooltip(message: 'Search broker symbols', child: Icon(Icons.arrow_drop_down)),
-      ],
-    ),
-  ),
-);
-
 Future<String?> chooseMobileOption(
   BuildContext context,
   String title,
@@ -118,8 +71,10 @@ Future<String?> chooseMobileOption(
 class MobileSelect extends StatelessWidget {
   final String label, value;
   final Map<String, String> options;
-  final ValueChanged<String> onChanged;
+  final ValueChanged<String>? onChanged;
+  final Future<String?> Function()? openPicker;
   final bool compact;
+  final String? tooltip;
   const MobileSelect({
     super.key,
     required this.label,
@@ -127,6 +82,8 @@ class MobileSelect extends StatelessWidget {
     required this.options,
     required this.onChanged,
     this.compact = false,
+    this.openPicker,
+    this.tooltip,
   });
   @override
   Widget build(BuildContext c) {
@@ -134,16 +91,16 @@ class MobileSelect extends StatelessWidget {
     final selected = options.containsKey(value)
         ? value
         : options.keys.firstOrNull;
-    return Semantics(
+    final widget = Semantics(
       button: true,
       label: label,
       child: InkWell(
         borderRadius: BorderRadius.circular(t.radius.clamp(3, 12)),
-        onTap: options.isEmpty
+        onTap: onChanged == null || (options.isEmpty && openPicker == null)
             ? null
             : () async {
                 HapticFeedback.selectionClick();
-                final result = await showModalBottomSheet<String>(
+                final result = await (openPicker?.call() ?? showModalBottomSheet<String>(
                   context: c,
                   isScrollControlled: true,
                   showDragHandle: true,
@@ -153,12 +110,13 @@ class MobileSelect extends StatelessWidget {
                     value: selected ?? '',
                     options: options,
                   ),
-                );
-                if (result != null && c.mounted) onChanged(result);
+                ));
+                if (result != null && c.mounted) onChanged?.call(result);
               },
         child: InputDecorator(
           decoration: InputDecoration(
             labelText: label,
+            enabled: onChanged != null,
             contentPadding: EdgeInsets.symmetric(
               horizontal: compact ? 9 : 12,
               vertical: compact ? 11 : 13,
@@ -183,6 +141,7 @@ class MobileSelect extends StatelessWidget {
         ),
       ),
     );
+    return tooltip == null ? widget : Tooltip(message: tooltip!, child: widget);
   }
 }
 

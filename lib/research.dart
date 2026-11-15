@@ -141,10 +141,12 @@ class _ResearchPageState extends State<ResearchPage> {
       period = '6M',
       error = '',
       jobId = '';
-  DateTime from = DateTime.now().subtract(const Duration(days: 183)),
+  DateTime from = presetStart('6M', DateTime.now()),
       to = DateTime.now();
   final symbol = TextEditingController(),
-      maximum = TextEditingController(text: '500');
+      maximum = TextEditingController(text: '500'),
+      balance = TextEditingController();
+  Map<String, dynamic> weekend = {};
   List<PineInput> params = [];
   Map<String, dynamic> values = {}, job = {}, selected = {};
   Map<String, Map<String, dynamic>> ranges = {};
@@ -191,6 +193,7 @@ class _ResearchPageState extends State<ResearchPage> {
     poll?.cancel();
     symbol.dispose();
     maximum.dispose();
+    balance.dispose();
     super.dispose();
   }
 
@@ -280,6 +283,23 @@ class _ResearchPageState extends State<ResearchPage> {
       setState(() => error = 'Select a Pine strategy and broker symbol.');
       return;
     }
+    final initial = double.tryParse(balance.text.trim());
+    final limit = int.tryParse(maximum.text.trim());
+    final weekendError = weekendCloseError(weekend);
+    if (balance.text.trim().isNotEmpty &&
+        (initial == null || !initial.isFinite || initial <= 0)) {
+      setState(() => error = 'Enter a positive initial balance.');
+      return;
+    }
+    if (weekendError != null) {
+      setState(() => error = weekendError);
+      return;
+    }
+    if (widget.optimize &&
+        (limit == null || limit < 1 || limit > m.optimizationLimit)) {
+      setState(() => error = 'Choose 1–${m.optimizationLimit} combinations.');
+      return;
+    }
     setState(() {
       busy = true;
       error = '';
@@ -287,7 +307,7 @@ class _ResearchPageState extends State<ResearchPage> {
     try {
       final source = '${obj(m.scripts[script])['source'] ?? ''}';
       final combos = widget.optimize
-          ? buildCombinations(ranges, int.tryParse(maximum.text) ?? 500)
+          ? buildCombinations(ranges, limit!)
           : null;
       final x = obj(
         await m.api.post('/api/mobile/jobs', {
@@ -315,6 +335,8 @@ class _ResearchPageState extends State<ResearchPage> {
                 1000,
             'values': values,
             'tickModel': model,
+            'weekendClose': weekend,
+            if (initial != null) 'strategyOverrides': {'initial_capital': initial},
             if (combos != null) 'combinations': combos,
             if (widget.optimize) 'optimizationType': method,
           },
@@ -369,7 +391,7 @@ class _ResearchPageState extends State<ResearchPage> {
           from = d;
         else
           to = d;
-        period = 'Custom';
+        period = 'custom';
       });
   }
 
@@ -577,74 +599,46 @@ class _ResearchPageState extends State<ResearchPage> {
                       }),
               ),
               gap(),
-              brokerSymbolField(c, 'Broker symbol', symbol.text,
-                  (value) => setState(() => symbol.text = value),
-                  enabled: !active && !busy),
+              brokerSymbolField(c, symbol.text,
+                (v) => setState(() => symbol.text = v), enabled: !active && !busy),
               gap(),
               pair(
-                dropdown(
-                  'Timeframe',
-                  tf,
-                  timeframes,
-                  (v) => setState(() => tf = v),
+                MobileSelect(
+                  label: 'Timeframe', value: tf, options: timeframes,
+                  onChanged: active || busy ? null : (v) => setState(() => tf = v),
                 ),
-                dropdown(
-                  'Period',
-                  period,
-                  {
-                    '1W': '1 Week',
-                    '1M': '1 Month',
-                    '3M': '3 Months',
-                    '6M': '6 Months',
-                    '1Y': '1 Year',
-                    '1.5Y': '1.5 Years',
-                    '2Y': '2 Years',
-                    '3Y': '3 Years',
-                    '5Y': '5 Years',
-                    'Custom': 'Custom',
-                  },
-                  (v) => setState(() {
-                    period = v;
-                    final days = {
-                      '1W': 7,
-                      '1M': 30,
-                      '3M': 90,
-                      '6M': 183,
-                      '1Y': 365,
-                      '1.5Y': 548,
-                      '2Y': 730,
-                      '3Y': 1095,
-                      '5Y': 1826,
-                    }[v];
-                    if (days != null) {
-                      to = DateTime.now();
-                      if (v == '1W') {
-                        // The end date is inclusive in the backend request.
-                        from = DateTime(to.year, to.month, to.day - 6);
-                      } else {
-                        from = to.subtract(Duration(days: days));
-                      }
-                    }
-                  }),
-                ),
+                field(balance, 'Initial balance (optional)',
+                  keyboard: const TextInputType.numberWithOptions(decimal: true)),
               ),
               gap(),
-              pair(
-                OutlinedButton(
-                  onPressed: () => chooseDate(true),
-                  child: Text(
-                    'From ${date(from)}',
-                    style: const TextStyle(fontSize: 11),
-                  ),
-                ),
-                OutlinedButton(
-                  onPressed: () => chooseDate(false),
-                  child: Text(
-                    'To ${date(to)}',
-                    style: const TextStyle(fontSize: 11),
-                  ),
-                ),
+              MobileSelect(
+                label: 'Period', value: period, options: researchPeriods,
+                onChanged: active || busy ? null : (v) => setState(() {
+                  period = v;
+                  if (v != 'custom') {
+                    to = DateTime.now();
+                    from = presetStart(v, to);
+                  }
+                }),
               ),
+              gap(7),
+              if (period == 'custom')
+                pair(
+                  OutlinedButton(
+                    onPressed: active || busy ? null : () => chooseDate(true),
+                    child: Text('From ${date(from)}', style: const TextStyle(fontSize: 11)),
+                  ),
+                  OutlinedButton(
+                    onPressed: active || busy ? null : () => chooseDate(false),
+                    child: Text('To ${date(to)}', style: const TextStyle(fontSize: 11)),
+                  ),
+                )
+              else
+                Text('${date(from)} → ${date(to)}',
+                    style: TextStyle(fontSize: 11, color: m.style.muted)),
+              gap(),
+              WeekendCloseFields(value: weekend, enabled: !active && !busy,
+                onChanged: (v) => setState(() => weekend = v)),
               gap(),
               dropdown(
                 'Strategy timing',
@@ -672,7 +666,7 @@ class _ResearchPageState extends State<ResearchPage> {
                 gap(),
                 field(
                   maximum,
-                  'Maximum combinations (1–500)',
+                  'Maximum combinations (1–${m.optimizationLimit})',
                   keyboard: TextInputType.number,
                 ),
               ],
@@ -744,10 +738,12 @@ class _ResearchPageState extends State<ResearchPage> {
           OutlinedButton(
             onPressed: () {
               try {
-                final x = buildCombinations(
-                  ranges,
-                  int.tryParse(maximum.text) ?? 500,
-                );
+                final maximumAllowed = TradeScope.of(c).optimizationLimit;
+                final limit = int.tryParse(maximum.text.trim());
+                if (limit == null || limit < 1 || limit > maximumAllowed) {
+                  throw FormatException('Choose 1–$maximumAllowed combinations.');
+                }
+                final x = buildCombinations(ranges, limit);
                 notice(c, '${x.length} combinations');
               } catch (e) {
                 notice(c, e);

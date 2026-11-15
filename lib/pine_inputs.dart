@@ -134,9 +134,9 @@ List<Map<String, dynamic>> buildCombinations(
   Map<String, Map<String, dynamic>> ranges,
   int maximum,
 ) {
-  if (maximum < 1 || maximum > 500)
+  if (maximum < 1 || maximum > 1000)
     throw const FormatException(
-      'Maximum combinations must be between 1 and 500.',
+      'Maximum combinations must be between 1 and 1000.',
     );
   final selected = ranges.entries.where((e) => e.value['use'] == true).toList();
   if (selected.isEmpty)

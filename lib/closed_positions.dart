@@ -11,8 +11,15 @@ String liveQuote(AppModel app, String symbol, String side) {
   final info = obj(app.snapshot['symbol_info']);
   final precision = tick['digits'] ??
       (matches(info['name'] ?? app.snapshot['symbol']) ? info['digits'] : null);
+  if (side == 'spread') {
+    final bid = numv(tick['bid']), ask = numv(tick['ask']);
+    if (!bid.isFinite || !ask.isFinite || bid <= 0 || ask < bid) return '—';
+    return brokerPrice(ask - bid, precision);
+  }
   return numv(tick[side]) > 0 ? brokerPrice(tick[side], precision) : '—';
 }
+
+String liveSpread(AppModel app, String symbol) => liveQuote(app, symbol, 'spread');
 
 String brokerPrice(dynamic value, dynamic precision) {
   final price = value is num ? value.toDouble() : double.tryParse('$value');
@@ -123,9 +130,8 @@ class _ClosedPositionsState extends State<ClosedPositions> {
               );
               return Column(
                 children: [
-                  brokerSymbolField(context, 'Symbol', active,
-                      (value) => setState(() => symbol = value),
-                      historySymbols: names.toSet()),
+                  brokerSymbolField(context, active, (value) => setState(() => symbol = value),
+                    label: 'Symbol', historySymbols: names.toSet()),
                   gap(),
                   Text(
                     '${shown.length} closing fills · Net ${money(net)} ${data['currency'] ?? ''} · UTC',
@@ -182,6 +188,18 @@ class _ClosedPositionsState extends State<ClosedPositions> {
 
 Widget mt5Diagnostics(BuildContext context) {
   final model = TradeScope.of(context);
+
+  Future<void> clear(BuildContext context, [String? id]) async {
+    final title = id == null ? 'Clear all MT5 diagnostics?' : 'Clear this strategy’s diagnostics?';
+    if (!await confirm(context, title, 'Clear recorded diagnostic events.', action: 'Clear')) return;
+    if (!context.mounted) return;
+    await perform(context, () => model.api.request(
+      id == null ? '/api/mt5/diagnostics' :
+        '/api/mt5/diagnostics?connection_id=${Uri.encodeQueryComponent(id)}',
+      method: 'DELETE',
+    ), success: 'Diagnostics cleared');
+  }
+
   String time(dynamic value) {
     final stamp = numv(value);
     if (stamp <= 0) return '—';
@@ -194,7 +212,11 @@ Widget mt5Diagnostics(BuildContext context) {
     Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        heading('MT5 Diagnostics'),
+        Row(children: [
+          Expanded(child: heading('MT5 Diagnostics')),
+          TextButton(onPressed: model.strategies.isEmpty ? null : () => clear(context),
+            child: const Text('Clear all')),
+        ]),
         const Text(
           'Entry signals, broker responses and stop-loss / take-profit updates',
         ),
@@ -220,6 +242,11 @@ Widget mt5Diagnostics(BuildContext context) {
                   '${strategy['timeframe']} · ${strategy['calcMode'] == 'tick' ? 'On every tick' : 'On candle close'} · ${diagnostics['needsAttention'] == true || diagnostics['restartRequired'] == true ? 'Needs attention' : strategy['status']}',
                 ),
                 children: [
+                  Align(alignment: Alignment.centerRight,
+                    child: TextButton(
+                      onPressed: () => clear(context, '${strategy['id']}'),
+                      child: const Text('Clear diagnostics'),
+                    )),
                   ListTile(
                     title: const Text('Last MT5 quote'),
                     subtitle: Text(time(diagnostics['lastTick'])),
